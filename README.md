@@ -2,7 +2,12 @@
 
 Arctic connects Polarion ALM to AI assistants through a custom [Model Context Protocol](https://modelcontextprotocol.io) server and a small CLI. Authentication uses a Polarion personal access token (PAT) configured outside the LLM; tools never accept or return secrets.
 
-Today the stack supports **`whoami`** (verify REST access and show the Polarion user for your token). Work-item create and richer tools will follow.
+Today the stack supports:
+
+- **`whoami`** — verify REST access and show the Polarion user for your token
+- **`list_projects` / `get_project`** — discover Polarion project ids
+- **`create_work_item`** — create one work item (`dry_run` by default)
+- **`get_work_item`** — read a work item back after create
 
 ## Repository layout
 
@@ -81,9 +86,16 @@ Run commands from the **repository root** so `.env` is found, or export `POLARIO
 
 ```bash
 uv run arctic whoami
+uv run arctic projects
+uv run arctic project ELK
+uv run arctic create-work-item --project ELK --type task --title "Fix login"
+uv run arctic create-work-item --project ELK --type task --title "Fix login" --apply
+uv run arctic work-item ELK ELK-42
 ```
 
-On success you should see:
+`create-work-item` is a **dry run** unless you pass `--apply`. `--type` is the Polarion work-item type id (`task`, `defect`, and so on), which must exist in that project.
+
+On success `whoami` prints:
 
 ```text
 id: <polarionUserId>
@@ -132,7 +144,12 @@ Example with explicit env in Cursor (replace values):
 
 On Windows, if Cursor cannot find `uv`, set `command` to the full path to `uv.exe`.
 
-Reload MCP in Cursor, then try a prompt such as: *Who am I in Polarion?* The `whoami` tool should return your user id (not the token).
+Reload MCP in Cursor. Example prompts:
+
+- *Who am I in Polarion?*
+- *List my Polarion projects, then dry-run a task titled Fix login in project ELK.*
+
+The `whoami` and `list_projects` tools return ids and names, not the token. `create_work_item` defaults to `dry_run=true`; only set `dry_run=false` when you intend to create the item.
 
 ## Claude Code (optional)
 
@@ -156,7 +173,7 @@ Tests mock Polarion HTTP; they do not need a live server.
 ## Roadmap
 
 - `arctic login` (local credential store)
-- Work-item tools (`list_projects`, `create_work_item`, …) on the same MCP server
+- Work-item type and enum discovery
 - Agent prompt path on `arctic` for natural-language commands with tool calling
 
 ## License

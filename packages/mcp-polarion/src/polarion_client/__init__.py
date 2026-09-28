@@ -9,10 +9,20 @@ from polarion_client.errors import (
     PolarionError,
     PolarionUnavailableError,
 )
-from polarion_client.models import CurrentUser
+from polarion_client.models import (
+    CreatedWorkItem,
+    CurrentUser,
+    Project,
+    WorkItem,
+    WorkItemCreatePreview,
+)
 
 __all__ = [
+    "CreatedWorkItem",
     "CurrentUser",
+    "Project",
+    "WorkItem",
+    "WorkItemCreatePreview",
     "EnvCredentialProvider",
     "MissingCredentialsError",
     "PolarionApiError",
