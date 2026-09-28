@@ -1,0 +1,15 @@
+[project]
+name = "arctic-workspace"
+version = "0.1.0"
+description = "Arctic Polarion MCP workspace"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv.workspace]
+members = ["packages/mcp-polarion", "packages/arctic"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["packages/mcp-polarion/tests", "packages/arctic/tests"]

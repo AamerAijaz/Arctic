@@ -1,0 +1,16 @@
+[project]
+name = "arctic"
+version = "0.1.0"
+description = "Arctic command-line host for Polarion"
+requires-python = ">=3.12"
+dependencies = ["mcp-polarion"]
+
+[project.scripts]
+arctic = "arctic.cli:main"
+
+[tool.uv.sources]
+mcp-polarion = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12.0"]
+build-backend = "uv_build"

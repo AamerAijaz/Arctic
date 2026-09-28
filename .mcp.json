@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "arctic": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "--directory", ".", "mcp-polarion"]
+    }
+  }
+}
