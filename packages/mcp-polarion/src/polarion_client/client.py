@@ -20,8 +20,10 @@ from polarion_client.models import (
     CreatedWorkItem,
     CurrentUser,
     Project,
+    UpdatedWorkItem,
     WorkItem,
     WorkItemCreatePreview,
+    WorkItemUpdatePreview,
 )
 
 _BEARER = re.compile(r"Bearer\s+\S+", re.IGNORECASE)
@@ -145,6 +147,47 @@ class PolarionClient:
             raise
         return _parse_work_item(_single_data(payload, "work item"))
 
+    def update_work_item(
+        self,
+        project_id: str,
+        work_item_id: str,
+        *,
+        title: str | None = None,
+        description: str | None = None,
+        status: str | None = None,
+        dry_run: bool = True,
+    ) -> UpdatedWorkItem | WorkItemUpdatePreview:
+        """PATCH /projects/{projectId}/workitems/{workItemId}, or preview when dry_run."""
+        _assert_project_allowed(project_id)
+        body = _work_item_update_body(
+            project_id,
+            work_item_id,
+            title=title,
+            description=description,
+            status=status,
+        )
+        if dry_run:
+            return WorkItemUpdatePreview(
+                project_id=project_id,
+                work_item_id=work_item_id,
+                body=body,
+            )
+        project = quote(project_id, safe="")
+        item = quote(work_item_id, safe="")
+        try:
+            self._request(
+                "PATCH",
+                f"/projects/{project}/workitems/{item}",
+                json=body,
+            )
+        except PolarionApiError as exc:
+            if exc.status_code == 404:
+                raise PolarionApiError(
+                    404, f"Work item not found: {project_id}/{work_item_id}"
+                ) from None
+            raise
+        return UpdatedWorkItem(id=f"{project_id}/{work_item_id}")
+
     def _request(
         self,
         method: str,
@@ -237,6 +280,34 @@ def _work_item_create_body(
     if description:
         attributes["description"] = {"type": "text/html", "value": description}
     return {"data": [{"type": "workitems", "attributes": attributes}]}
+
+
+def _work_item_update_body(
+    project_id: str,
+    work_item_id: str,
+    *,
+    title: str | None,
+    description: str | None,
+    status: str | None,
+) -> dict[str, Any]:
+    attributes: dict[str, Any] = {}
+    if title is not None:
+        attributes["title"] = title
+    if description is not None:
+        attributes["description"] = {"type": "text/html", "value": description}
+    if status is not None:
+        attributes["status"] = status
+    if not attributes:
+        raise PolarionError(
+            "Provide at least one of title, description, or status to update."
+        )
+    return {
+        "data": {
+            "type": "workitems",
+            "id": f"{project_id}/{work_item_id}",
+            "attributes": attributes,
+        }
+    }
 
 
 def _list_data(payload: Any, kind: str) -> list[Any]:

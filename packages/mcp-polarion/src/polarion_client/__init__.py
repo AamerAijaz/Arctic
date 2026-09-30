@@ -13,16 +13,20 @@ from polarion_client.models import (
     CreatedWorkItem,
     CurrentUser,
     Project,
+    UpdatedWorkItem,
     WorkItem,
     WorkItemCreatePreview,
+    WorkItemUpdatePreview,
 )
 
 __all__ = [
     "CreatedWorkItem",
     "CurrentUser",
     "Project",
+    "UpdatedWorkItem",
     "WorkItem",
     "WorkItemCreatePreview",
+    "WorkItemUpdatePreview",
     "EnvCredentialProvider",
     "MissingCredentialsError",
     "PolarionApiError",

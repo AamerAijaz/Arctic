@@ -10,7 +10,12 @@ from typing import TextIO
 from polarion_client.client import PolarionClient
 from polarion_client.credentials import EnvCredentialProvider
 from polarion_client.errors import MissingCredentialsError, PolarionError
-from polarion_client.models import CreatedWorkItem, WorkItemCreatePreview
+from polarion_client.models import (
+    CreatedWorkItem,
+    UpdatedWorkItem,
+    WorkItemCreatePreview,
+    WorkItemUpdatePreview,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -43,6 +48,21 @@ def build_parser() -> argparse.ArgumentParser:
     work_item = sub.add_parser("work-item", help="Show one work item")
     work_item.add_argument("project_id")
     work_item.add_argument("work_item_id")
+
+    update = sub.add_parser(
+        "update-work-item",
+        help="Update a work item (dry-run unless --apply)",
+    )
+    update.add_argument("--project", required=True, dest="project_id")
+    update.add_argument("--id", required=True, dest="work_item_id")
+    update.add_argument("--title")
+    update.add_argument("--description")
+    update.add_argument("--status")
+    update.add_argument(
+        "--apply",
+        action="store_true",
+        help="PATCH Polarion. Without this flag, print the request body only.",
+    )
     return parser
 
 
@@ -159,6 +179,36 @@ def run_work_item(
     return _handle(action, out=out)
 
 
+def run_update_work_item(
+    client: PolarionClient,
+    *,
+    project_id: str,
+    work_item_id: str,
+    title: str | None,
+    description: str | None,
+    status: str | None,
+    apply: bool,
+    out: TextIO | None = None,
+) -> int:
+    def action(stream: TextIO) -> None:
+        result = client.update_work_item(
+            project_id,
+            work_item_id,
+            title=title,
+            description=description,
+            status=status,
+            dry_run=not apply,
+        )
+        if isinstance(result, WorkItemUpdatePreview):
+            print("dry_run: true", file=stream)
+            print(json.dumps(result.body, indent=2), file=stream)
+            return
+        if isinstance(result, UpdatedWorkItem):
+            print(f"id: {result.id}", file=stream)
+
+    return _handle(action, out=out)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     client = PolarionClient(EnvCredentialProvider())
@@ -184,6 +234,16 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command == "work-item":
         return run_work_item(client, args.project_id, args.work_item_id)
+    if args.command == "update-work-item":
+        return run_update_work_item(
+            client,
+            project_id=args.project_id,
+            work_item_id=args.work_item_id,
+            title=args.title,
+            description=args.description,
+            status=args.status,
+            apply=args.apply,
+        )
     return 2
 
 

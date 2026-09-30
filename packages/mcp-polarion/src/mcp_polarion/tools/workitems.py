@@ -8,7 +8,12 @@ from fastmcp import FastMCP
 
 from mcp_polarion.tools.auth import ClientFactory
 from polarion_client.errors import PolarionError
-from polarion_client.models import CreatedWorkItem, WorkItemCreatePreview
+from polarion_client.models import (
+    CreatedWorkItem,
+    UpdatedWorkItem,
+    WorkItemCreatePreview,
+    WorkItemUpdatePreview,
+)
 
 
 def register_workitem_tools(mcp: FastMCP, client_factory: ClientFactory) -> None:
@@ -82,3 +87,36 @@ def register_workitem_tools(mcp: FastMCP, client_factory: ClientFactory) -> None
             return client_factory().get_work_item(project_id, work_item_id).to_dict()
         except PolarionError as exc:
             raise RuntimeError(str(exc)) from None
+
+    @mcp.tool
+    def update_work_item(
+        project_id: str,
+        work_item_id: str,
+        title: str | None = None,
+        description: str | None = None,
+        status: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Update one work item in a Polarion project.
+
+        Provide at least one of title, description, or status. Call
+        get_work_item first if you need the current values. Default
+        dry_run=true only returns the PATCH body Polarion would receive;
+        set dry_run=false to apply the update.
+        """
+        try:
+            result = client_factory().update_work_item(
+                project_id,
+                work_item_id,
+                title=title,
+                description=description,
+                status=status,
+                dry_run=dry_run,
+            )
+        except PolarionError as exc:
+            raise RuntimeError(str(exc)) from None
+        if isinstance(result, WorkItemUpdatePreview):
+            return result.to_dict()
+        if isinstance(result, UpdatedWorkItem):
+            return result.to_dict()
+        raise RuntimeError("Unexpected update_work_item result.")

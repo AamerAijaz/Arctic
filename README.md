@@ -7,7 +7,8 @@ Today the stack supports:
 - **`whoami`** — verify REST access and show the Polarion user for your token
 - **`list_projects` / `get_project`** — discover Polarion project ids
 - **`create_work_item`** — create one work item (`dry_run` by default)
-- **`get_work_item`** — read a work item back after create
+- **`update_work_item`** — update title, description, and/or status (`dry_run` by default)
+- **`get_work_item`** — read a work item back after create or update
 
 ## Repository layout
 
@@ -91,9 +92,11 @@ uv run arctic project ELK
 uv run arctic create-work-item --project ELK --type task --title "Fix login"
 uv run arctic create-work-item --project ELK --type task --title "Fix login" --apply
 uv run arctic work-item ELK ELK-42
+uv run arctic update-work-item --project ELK --id ELK-42 --title "Fix login again"
+uv run arctic update-work-item --project ELK --id ELK-42 --status done --apply
 ```
 
-`create-work-item` is a **dry run** unless you pass `--apply`. `--type` is the Polarion work-item type id (`task`, `defect`, and so on), which must exist in that project.
+`create-work-item` and `update-work-item` are **dry runs** unless you pass `--apply`. `--type` is the Polarion work-item type id (`task`, `defect`, and so on), which must exist in that project.
 
 On success `whoami` prints:
 
@@ -149,7 +152,7 @@ Reload MCP in Cursor. Example prompts:
 - *Who am I in Polarion?*
 - *List my Polarion projects, then dry-run a task titled Fix login in project ELK.*
 
-The `whoami` and `list_projects` tools return ids and names, not the token. `create_work_item` defaults to `dry_run=true`; only set `dry_run=false` when you intend to create the item.
+The `whoami` and `list_projects` tools return ids and names, not the token. `create_work_item` and `update_work_item` default to `dry_run=true`; only set `dry_run=false` when you intend to create or change the item.
 
 ## Claude Code (optional)
 

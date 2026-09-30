@@ -5,7 +5,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from arctic.cli import run_create_work_item, run_projects
+from arctic.cli import run_create_work_item, run_projects, run_update_work_item
 from polarion_client.client import PolarionClient
 from polarion_client.credentials import EnvCredentialProvider
 
@@ -93,3 +93,48 @@ def test_create_work_item_apply_prints_id(
     out = capsys.readouterr().out
     assert "id: ELK/ELK-1" in out
     assert "portal_url: https://example.com/wi" in out
+
+
+def test_update_work_item_dry_run_prints_body(
+    capsys: pytest.CaptureFixture[str], env: None
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("dry run")
+
+    assert (
+        run_update_work_item(
+            _client(handler),
+            project_id="ELK",
+            work_item_id="ELK-42",
+            title="Renamed",
+            description=None,
+            status=None,
+            apply=False,
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "dry_run: true" in out
+    assert '"title": "Renamed"' in out
+    assert '"id": "ELK/ELK-42"' in out
+
+
+def test_update_work_item_apply_prints_id(
+    capsys: pytest.CaptureFixture[str], env: None
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(204)
+
+    assert (
+        run_update_work_item(
+            _client(handler),
+            project_id="ELK",
+            work_item_id="ELK-42",
+            title="Renamed",
+            description=None,
+            status="done",
+            apply=True,
+        )
+        == 0
+    )
+    assert "id: ELK/ELK-42" in capsys.readouterr().out

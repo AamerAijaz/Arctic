@@ -9,8 +9,13 @@ import pytest
 
 from polarion_client.client import PolarionClient
 from polarion_client.credentials import EnvCredentialProvider
-from polarion_client.errors import PolarionApiError
-from polarion_client.models import CreatedWorkItem, WorkItemCreatePreview
+from polarion_client.errors import PolarionApiError, PolarionError
+from polarion_client.models import (
+    CreatedWorkItem,
+    UpdatedWorkItem,
+    WorkItemCreatePreview,
+    WorkItemUpdatePreview,
+)
 
 TOKEN = "super-secret-token"
 
@@ -192,3 +197,85 @@ def test_create_blocked_by_allowlist(env: None, monkeypatch: pytest.MonkeyPatch)
 
     with pytest.raises(PolarionApiError, match="ALLOWLIST"):
         _client(handler).create_work_item("OTHER", "task", "Nope", dry_run=False)
+
+
+def test_update_work_item_dry_run_does_not_patch(env: None) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("dry_run must not call Polarion")
+
+    result = _client(handler).update_work_item(
+        "ELK",
+        "ELK-42",
+        title="Fix login again",
+        description="<p>Updated</p>",
+        status="in_progress",
+    )
+    assert isinstance(result, WorkItemUpdatePreview)
+    assert result.project_id == "ELK"
+    assert result.work_item_id == "ELK-42"
+    assert result.body == {
+        "data": {
+            "type": "workitems",
+            "id": "ELK/ELK-42",
+            "attributes": {
+                "title": "Fix login again",
+                "description": {"type": "text/html", "value": "<p>Updated</p>"},
+                "status": "in_progress",
+            },
+        }
+    }
+
+
+def test_update_work_item_apply(env: None) -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["path"] = unquote(request.url.path)
+        seen["body"] = request.read()
+        return httpx.Response(204)
+
+    result = _client(handler).update_work_item(
+        "ELK", "ELK-42", title="Renamed", dry_run=False
+    )
+    assert isinstance(result, UpdatedWorkItem)
+    assert result.id == "ELK/ELK-42"
+    assert seen["method"] == "PATCH"
+    assert str(seen["path"]).endswith("/projects/ELK/workitems/ELK-42")
+    body = seen["body"]
+    assert isinstance(body, bytes)
+    assert b'"title":"Renamed"' in body
+    assert b'"id":"ELK/ELK-42"' in body
+    assert TOKEN not in body.decode()
+
+
+def test_update_work_item_requires_fields(env: None) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("must not call Polarion")
+
+    with pytest.raises(PolarionError, match="at least one"):
+        _client(handler).update_work_item("ELK", "ELK-42", dry_run=False)
+
+
+def test_update_work_item_not_found(env: None) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            404, json={"errors": [{"status": "404", "title": "Not Found"}]}
+        )
+
+    with pytest.raises(PolarionApiError, match="Work item not found: ELK/ELK-99"):
+        _client(handler).update_work_item(
+            "ELK", "ELK-99", title="Nope", dry_run=False
+        )
+
+
+def test_update_blocked_by_allowlist(env: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POLARION_PROJECT_ALLOWLIST", "ELK")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("must not call Polarion")
+
+    with pytest.raises(PolarionApiError, match="ALLOWLIST"):
+        _client(handler).update_work_item(
+            "OTHER", "OTHER-1", title="Nope", dry_run=False
+        )

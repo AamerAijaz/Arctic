@@ -70,3 +70,26 @@ class WorkItemCreatePreview:
             "project_id": self.project_id,
             "body": self.body,
         }
+
+
+@dataclass(frozen=True)
+class UpdatedWorkItem:
+    id: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {"id": self.id}
+
+
+@dataclass(frozen=True)
+class WorkItemUpdatePreview:
+    project_id: str
+    work_item_id: str
+    body: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "dry_run": True,
+            "project_id": self.project_id,
+            "work_item_id": self.work_item_id,
+            "body": self.body,
+        }
