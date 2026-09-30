@@ -18,11 +18,17 @@ from polarion_client.errors import (
 )
 from polarion_client.models import (
     CreatedWorkItem,
+    CreatedWorkItemLink,
     CurrentUser,
+    DeletedWorkItemLink,
+    LinkRole,
     Project,
     UpdatedWorkItem,
     WorkItem,
     WorkItemCreatePreview,
+    WorkItemLink,
+    WorkItemLinkDeletePreview,
+    WorkItemLinkPreview,
     WorkItemUpdatePreview,
 )
 
@@ -188,6 +194,164 @@ class PolarionClient:
             raise
         return UpdatedWorkItem(id=f"{project_id}/{work_item_id}")
 
+    def list_work_items(
+        self,
+        project_id: str,
+        *,
+        query: str | None = None,
+        page_size: int = 100,
+        page_number: int = 1,
+    ) -> list[WorkItem]:
+        """GET /projects/{projectId}/workitems — Lucene query, for example type:requirement."""
+        _assert_project_allowed(project_id)
+        params: dict[str, str | int] = {
+            "fields[workitems]": _WORK_ITEM_FIELDS,
+            "page[size]": page_size,
+            "page[number]": page_number,
+        }
+        if query:
+            params["query"] = query
+        encoded = quote(project_id, safe="")
+        payload = self._request(
+            "GET",
+            f"/projects/{encoded}/workitems",
+            params=params,
+        )
+        return [_parse_work_item(item) for item in _list_data(payload, "work item list")]
+
+    def list_link_roles(self, project_id: str) -> list[LinkRole]:
+        """GET /projects/{projectId}/enumerations/~/workitem-link-role/~."""
+        _assert_project_allowed(project_id)
+        encoded = quote(project_id, safe="")
+        payload = self._request(
+            "GET",
+            f"/projects/{encoded}/enumerations/~/workitem-link-role/~",
+        )
+        return _parse_link_roles(payload)
+
+    def list_work_item_links(
+        self, project_id: str, work_item_id: str
+    ) -> list[WorkItemLink]:
+        """GET /projects/{projectId}/workitems/{workItemId}/linkedworkitems."""
+        return self._list_work_item_links(project_id, work_item_id, backlinks=False)
+
+    def list_work_item_backlinks(
+        self, project_id: str, work_item_id: str
+    ) -> list[WorkItemLink]:
+        """GET /projects/{projectId}/workitems/{workItemId}/backlinkedworkitems."""
+        return self._list_work_item_links(project_id, work_item_id, backlinks=True)
+
+    def _list_work_item_links(
+        self,
+        project_id: str,
+        work_item_id: str,
+        *,
+        backlinks: bool,
+    ) -> list[WorkItemLink]:
+        _assert_project_allowed(project_id)
+        project = quote(project_id, safe="")
+        item = quote(work_item_id, safe="")
+        collection = "backlinkedworkitems" if backlinks else "linkedworkitems"
+        kind = "backlink list" if backlinks else "link list"
+        try:
+            payload = self._request(
+                "GET",
+                f"/projects/{project}/workitems/{item}/{collection}",
+                params={
+                    "fields[linkedworkitems]": "role",
+                    "fields[workitems]": _WORK_ITEM_FIELDS,
+                    "include": "workItem",
+                },
+            )
+        except PolarionApiError as exc:
+            if exc.status_code == 404:
+                raise PolarionApiError(
+                    404, f"Work item not found: {project_id}/{work_item_id}"
+                ) from None
+            raise
+        included = _included_work_items(payload)
+        return [
+            _parse_work_item_link(entry, included)
+            for entry in _list_data(payload, kind)
+        ]
+
+    def create_work_item_link(
+        self,
+        project_id: str,
+        work_item_id: str,
+        target_work_item_id: str,
+        role: str,
+        *,
+        target_project_id: str | None = None,
+        dry_run: bool = True,
+    ) -> CreatedWorkItemLink | WorkItemLinkPreview:
+        """POST .../linkedworkitems, or return the body when dry_run."""
+        _assert_project_allowed(project_id)
+        target_project = target_project_id or project_id
+        _assert_project_allowed(target_project)
+        body = _work_item_link_create_body(target_project, target_work_item_id, role)
+        if dry_run:
+            return WorkItemLinkPreview(
+                project_id=project_id,
+                work_item_id=work_item_id,
+                body=body,
+            )
+        project = quote(project_id, safe="")
+        item = quote(work_item_id, safe="")
+        try:
+            payload = self._request(
+                "POST",
+                f"/projects/{project}/workitems/{item}/linkedworkitems",
+                json=body,
+            )
+        except PolarionApiError as exc:
+            if exc.status_code == 404:
+                raise PolarionApiError(
+                    404, f"Work item not found: {project_id}/{work_item_id}"
+                ) from None
+            raise
+        return _parse_created_work_item_link(payload)
+
+    def delete_work_item_link(
+        self,
+        project_id: str,
+        work_item_id: str,
+        target_work_item_id: str,
+        role: str,
+        *,
+        target_project_id: str | None = None,
+        dry_run: bool = True,
+    ) -> DeletedWorkItemLink | WorkItemLinkDeletePreview:
+        """DELETE one linkedworkitems resource, or preview the path when dry_run."""
+        _assert_project_allowed(project_id)
+        target_project = target_project_id or project_id
+        _assert_project_allowed(target_project)
+        path = (
+            f"/projects/{quote(project_id, safe='')}/workitems/"
+            f"{quote(work_item_id, safe='')}/linkedworkitems/"
+            f"{quote(role, safe='')}/{quote(target_project, safe='')}/"
+            f"{quote(target_work_item_id, safe='')}"
+        )
+        link_id = (
+            f"{project_id}/{work_item_id}/{role}/{target_project}/{target_work_item_id}"
+        )
+        if dry_run:
+            return WorkItemLinkDeletePreview(
+                project_id=project_id,
+                work_item_id=work_item_id,
+                role=role,
+                target_project_id=target_project,
+                target_work_item_id=target_work_item_id,
+                path=path,
+            )
+        try:
+            self._request("DELETE", path)
+        except PolarionApiError as exc:
+            if exc.status_code == 404:
+                raise PolarionApiError(404, f"Link not found: {link_id}") from None
+            raise
+        return DeletedWorkItemLink(id=link_id)
+
     def _request(
         self,
         method: str,
@@ -310,6 +474,27 @@ def _work_item_update_body(
     }
 
 
+def _work_item_link_create_body(
+    target_project_id: str, target_work_item_id: str, role: str
+) -> dict[str, Any]:
+    return {
+        "data": [
+            {
+                "type": "linkedworkitems",
+                "attributes": {"role": role},
+                "relationships": {
+                    "workItem": {
+                        "data": {
+                            "type": "workitems",
+                            "id": f"{target_project_id}/{target_work_item_id}",
+                        }
+                    }
+                },
+            }
+        ]
+    }
+
+
 def _list_data(payload: Any, kind: str) -> list[Any]:
     if not isinstance(payload, dict):
         raise PolarionError(f"Polarion returned an unexpected {kind} response.")
@@ -405,3 +590,101 @@ def _parse_created_work_item(payload: Any) -> CreatedWorkItem:
         id=item_id,
         portal_url=portal if isinstance(portal, str) and portal else None,
     )
+
+
+def _parse_link_roles(payload: Any) -> list[LinkRole]:
+    data = _single_data(payload, "link role enumeration")
+    attributes = data.get("attributes") if isinstance(data.get("attributes"), dict) else {}
+    options = attributes.get("options")
+    if not isinstance(options, list):
+        raise PolarionError("Polarion returned an unexpected link-role response.")
+    roles: list[LinkRole] = []
+    for option in options:
+        if not isinstance(option, dict):
+            continue
+        role_id = option.get("id")
+        if not isinstance(role_id, str) or not role_id:
+            continue
+        name = option.get("name")
+        opposite = option.get("oppositeName")
+        raw_rules = option.get("linkRules")
+        rules: list[dict[str, Any]] | None = None
+        if isinstance(raw_rules, list):
+            rules = [rule for rule in raw_rules if isinstance(rule, dict)]
+        roles.append(
+            LinkRole(
+                id=role_id,
+                name=name if isinstance(name, str) and name else None,
+                opposite_name=opposite if isinstance(opposite, str) and opposite else None,
+                link_rules=rules,
+            )
+        )
+    return roles
+
+
+def _included_work_items(payload: Any) -> dict[str, WorkItem]:
+    if not isinstance(payload, dict):
+        return {}
+    included = payload.get("included")
+    if not isinstance(included, list):
+        return {}
+    result: dict[str, WorkItem] = {}
+    for item in included:
+        if not isinstance(item, dict) or item.get("type") != "workitems":
+            continue
+        parsed = _parse_work_item(item)
+        result[parsed.id] = parsed
+    return result
+
+
+def _relationship_work_item_id(item: dict[str, Any]) -> str | None:
+    relationships = item.get("relationships")
+    if not isinstance(relationships, dict):
+        return None
+    work_item = relationships.get("workItem")
+    if not isinstance(work_item, dict):
+        return None
+    data = work_item.get("data")
+    if not isinstance(data, dict):
+        return None
+    target_id = data.get("id")
+    if isinstance(target_id, str) and target_id:
+        return target_id
+    return None
+
+
+def _parse_work_item_link(
+    item: Any, included: dict[str, WorkItem]
+) -> WorkItemLink:
+    if not isinstance(item, dict):
+        raise PolarionError("Polarion returned an unexpected work item link.")
+    link_id = item.get("id")
+    if not isinstance(link_id, str) or not link_id:
+        raise PolarionError("Polarion returned a work item link without an id.")
+    attributes = item.get("attributes") if isinstance(item.get("attributes"), dict) else {}
+    role = _text_value(attributes.get("role"))
+    target_id = _relationship_work_item_id(item)
+    target_title = None
+    if target_id and target_id in included:
+        target_title = included[target_id].title
+    return WorkItemLink(
+        id=link_id,
+        role=role,
+        target_id=target_id,
+        target_title=target_title,
+    )
+
+
+def _parse_created_work_item_link(payload: Any) -> CreatedWorkItemLink:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    item: Any = None
+    if isinstance(data, list) and data:
+        item = data[0]
+    elif isinstance(data, dict):
+        item = data
+    if not isinstance(item, dict):
+        raise PolarionError("Polarion returned an unexpected create-link response.")
+    item_id = item.get("id")
+    if not isinstance(item_id, str) or not item_id:
+        raise PolarionError("Polarion create-link response had no id.")
+    return CreatedWorkItemLink(id=item_id)

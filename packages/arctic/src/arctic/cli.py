@@ -12,8 +12,13 @@ from polarion_client.credentials import EnvCredentialProvider
 from polarion_client.errors import MissingCredentialsError, PolarionError
 from polarion_client.models import (
     CreatedWorkItem,
+    CreatedWorkItemLink,
+    DeletedWorkItemLink,
     UpdatedWorkItem,
     WorkItemCreatePreview,
+    WorkItemLink,
+    WorkItemLinkDeletePreview,
+    WorkItemLinkPreview,
     WorkItemUpdatePreview,
 )
 
@@ -62,6 +67,65 @@ def build_parser() -> argparse.ArgumentParser:
         "--apply",
         action="store_true",
         help="PATCH Polarion. Without this flag, print the request body only.",
+    )
+
+    work_items = sub.add_parser(
+        "work-items",
+        help="List work items in a project (optional Lucene query)",
+    )
+    work_items.add_argument("project_id")
+    work_items.add_argument(
+        "--query",
+        help="Polarion Lucene query, for example type:requirement",
+    )
+    work_items.add_argument("--page-size", type=int, default=100)
+    work_items.add_argument("--page-number", type=int, default=1)
+
+    link_roles = sub.add_parser(
+        "link-roles",
+        help="List work-item link roles for a project",
+    )
+    link_roles.add_argument("project_id")
+
+    links = sub.add_parser("links", help="List outgoing links from a work item")
+    links.add_argument("project_id")
+    links.add_argument("work_item_id")
+
+    backlinks = sub.add_parser(
+        "backlinks",
+        help="List incoming links to a work item",
+    )
+    backlinks.add_argument("project_id")
+    backlinks.add_argument("work_item_id")
+
+    link = sub.add_parser(
+        "link",
+        help="Create a work-item link (dry-run unless --apply)",
+    )
+    link.add_argument("--project", required=True, dest="project_id")
+    link.add_argument("--from", required=True, dest="work_item_id")
+    link.add_argument("--to", required=True, dest="target_work_item_id")
+    link.add_argument("--role", required=True)
+    link.add_argument("--target-project", dest="target_project_id")
+    link.add_argument(
+        "--apply",
+        action="store_true",
+        help="POST to Polarion. Without this flag, print the request body only.",
+    )
+
+    unlink = sub.add_parser(
+        "unlink",
+        help="Delete a work-item link (dry-run unless --apply)",
+    )
+    unlink.add_argument("--project", required=True, dest="project_id")
+    unlink.add_argument("--from", required=True, dest="work_item_id")
+    unlink.add_argument("--to", required=True, dest="target_work_item_id")
+    unlink.add_argument("--role", required=True)
+    unlink.add_argument("--target-project", dest="target_project_id")
+    unlink.add_argument(
+        "--apply",
+        action="store_true",
+        help="DELETE on Polarion. Without this flag, print the request path only.",
     )
     return parser
 
@@ -209,6 +273,149 @@ def run_update_work_item(
     return _handle(action, out=out)
 
 
+def run_work_items(
+    client: PolarionClient,
+    project_id: str,
+    *,
+    query: str | None = None,
+    page_size: int = 100,
+    page_number: int = 1,
+    out: TextIO | None = None,
+) -> int:
+    def action(stream: TextIO) -> None:
+        items = client.list_work_items(
+            project_id,
+            query=query,
+            page_size=page_size,
+            page_number=page_number,
+        )
+        if not items:
+            print("No work items.", file=stream)
+            return
+        for item in items:
+            title = f"  {item.title}" if item.title else ""
+            wi_type = f"  {item.type}" if item.type else ""
+            print(f"{item.id}{wi_type}{title}", file=stream)
+
+    return _handle(action, out=out)
+
+
+def run_link_roles(
+    client: PolarionClient, project_id: str, *, out: TextIO | None = None
+) -> int:
+    def action(stream: TextIO) -> None:
+        roles = client.list_link_roles(project_id)
+        if not roles:
+            print("No link roles.", file=stream)
+            return
+        for role in roles:
+            name = f"  {role.name}" if role.name else ""
+            print(f"{role.id}{name}", file=stream)
+
+    return _handle(action, out=out)
+
+
+def _print_links(links: list[WorkItemLink], stream: TextIO) -> None:
+    if not links:
+        print("No links.", file=stream)
+        return
+    for link in links:
+        role = f"  {link.role}" if link.role else ""
+        target = f"  {link.target_id}" if link.target_id else ""
+        title = f"  {link.target_title}" if link.target_title else ""
+        print(f"{link.id}{role}{target}{title}", file=stream)
+
+
+def run_links(
+    client: PolarionClient,
+    project_id: str,
+    work_item_id: str,
+    *,
+    out: TextIO | None = None,
+) -> int:
+    def action(stream: TextIO) -> None:
+        _print_links(
+            client.list_work_item_links(project_id, work_item_id), stream
+        )
+
+    return _handle(action, out=out)
+
+
+def run_backlinks(
+    client: PolarionClient,
+    project_id: str,
+    work_item_id: str,
+    *,
+    out: TextIO | None = None,
+) -> int:
+    def action(stream: TextIO) -> None:
+        _print_links(
+            client.list_work_item_backlinks(project_id, work_item_id), stream
+        )
+
+    return _handle(action, out=out)
+
+
+def run_link(
+    client: PolarionClient,
+    *,
+    project_id: str,
+    work_item_id: str,
+    target_work_item_id: str,
+    role: str,
+    target_project_id: str | None,
+    apply: bool,
+    out: TextIO | None = None,
+) -> int:
+    def action(stream: TextIO) -> None:
+        result = client.create_work_item_link(
+            project_id,
+            work_item_id,
+            target_work_item_id,
+            role,
+            target_project_id=target_project_id,
+            dry_run=not apply,
+        )
+        if isinstance(result, WorkItemLinkPreview):
+            print("dry_run: true", file=stream)
+            print(json.dumps(result.body, indent=2), file=stream)
+            return
+        if isinstance(result, CreatedWorkItemLink):
+            print(f"id: {result.id}", file=stream)
+
+    return _handle(action, out=out)
+
+
+def run_unlink(
+    client: PolarionClient,
+    *,
+    project_id: str,
+    work_item_id: str,
+    target_work_item_id: str,
+    role: str,
+    target_project_id: str | None,
+    apply: bool,
+    out: TextIO | None = None,
+) -> int:
+    def action(stream: TextIO) -> None:
+        result = client.delete_work_item_link(
+            project_id,
+            work_item_id,
+            target_work_item_id,
+            role,
+            target_project_id=target_project_id,
+            dry_run=not apply,
+        )
+        if isinstance(result, WorkItemLinkDeletePreview):
+            print("dry_run: true", file=stream)
+            print(f"path: {result.path}", file=stream)
+            return
+        if isinstance(result, DeletedWorkItemLink):
+            print(f"id: {result.id}", file=stream)
+
+    return _handle(action, out=out)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     client = PolarionClient(EnvCredentialProvider())
@@ -242,6 +449,40 @@ def main(argv: list[str] | None = None) -> int:
             title=args.title,
             description=args.description,
             status=args.status,
+            apply=args.apply,
+        )
+    if args.command == "work-items":
+        return run_work_items(
+            client,
+            args.project_id,
+            query=args.query,
+            page_size=args.page_size,
+            page_number=args.page_number,
+        )
+    if args.command == "link-roles":
+        return run_link_roles(client, args.project_id)
+    if args.command == "links":
+        return run_links(client, args.project_id, args.work_item_id)
+    if args.command == "backlinks":
+        return run_backlinks(client, args.project_id, args.work_item_id)
+    if args.command == "link":
+        return run_link(
+            client,
+            project_id=args.project_id,
+            work_item_id=args.work_item_id,
+            target_work_item_id=args.target_work_item_id,
+            role=args.role,
+            target_project_id=args.target_project_id,
+            apply=args.apply,
+        )
+    if args.command == "unlink":
+        return run_unlink(
+            client,
+            project_id=args.project_id,
+            work_item_id=args.work_item_id,
+            target_work_item_id=args.target_work_item_id,
+            role=args.role,
+            target_project_id=args.target_project_id,
             apply=args.apply,
         )
     return 2

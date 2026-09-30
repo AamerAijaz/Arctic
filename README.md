@@ -6,9 +6,15 @@ Today the stack supports:
 
 - **`whoami`** — verify REST access and show the Polarion user for your token
 - **`list_projects` / `get_project`** — discover Polarion project ids
+- **`list_work_items`** — query work items (Lucene, for example `type:requirement`)
 - **`create_work_item`** — create one work item (`dry_run` by default)
 - **`update_work_item`** — update title, description, and/or status (`dry_run` by default)
 - **`get_work_item`** — read a work item back after create or update
+- **`list_link_roles`** — link-role ids and `linkRules` for a project
+- **`list_work_item_links` / `list_work_item_backlinks`** — outgoing and incoming links
+- **`create_work_item_link` / `delete_work_item_link`** — add or remove a link (`dry_run` by default)
+
+Polarion **requirements are work items** (type ids such as `requirement` or `systemrequirement`). Linking a task to a requirement uses `create_work_item_link`; documents are not required and are not exposed yet.
 
 ## Repository layout
 
@@ -92,11 +98,18 @@ uv run arctic project ELK
 uv run arctic create-work-item --project ELK --type task --title "Fix login"
 uv run arctic create-work-item --project ELK --type task --title "Fix login" --apply
 uv run arctic work-item ELK ELK-42
+uv run arctic work-items ELK --query "type:requirement"
+uv run arctic link-roles ELK
+uv run arctic link --project ELK --from ELK-42 --to ELK-12 --role implements
+uv run arctic link --project ELK --from ELK-42 --to ELK-12 --role implements --apply
+uv run arctic links ELK ELK-42
+uv run arctic backlinks ELK ELK-12
+uv run arctic unlink --project ELK --from ELK-42 --to ELK-12 --role implements --apply
 uv run arctic update-work-item --project ELK --id ELK-42 --title "Fix login again"
 uv run arctic update-work-item --project ELK --id ELK-42 --status done --apply
 ```
 
-`create-work-item` and `update-work-item` are **dry runs** unless you pass `--apply`. `--type` is the Polarion work-item type id (`task`, `defect`, and so on), which must exist in that project.
+`create-work-item`, `update-work-item`, `link`, and `unlink` are **dry runs** unless you pass `--apply`. `--type` is the Polarion work-item type id (`task`, `defect`, `requirement`, and so on), which must exist in that project. `--role` is a Polarion link-role id from `link-roles`; Polarion rejects combinations that violate that project's `linkRules`.
 
 On success `whoami` prints:
 
@@ -151,8 +164,9 @@ Reload MCP in Cursor. Example prompts:
 
 - *Who am I in Polarion?*
 - *List my Polarion projects, then dry-run a task titled Fix login in project ELK.*
+- *List requirements in ELK, then dry-run an implements link from ELK-42 to that requirement.*
 
-The `whoami` and `list_projects` tools return ids and names, not the token. `create_work_item` and `update_work_item` default to `dry_run=true`; only set `dry_run=false` when you intend to create or change the item.
+The `whoami` and `list_projects` tools return ids and names, not the token. `create_work_item`, `update_work_item`, `create_work_item_link`, and `delete_work_item_link` default to `dry_run=true`; only set `dry_run=false` when you intend to create or change data. Call `list_link_roles` before linking.
 
 ## Claude Code (optional)
 
@@ -176,7 +190,8 @@ Tests mock Polarion HTTP; they do not need a live server.
 ## Roadmap
 
 - `arctic login` (local credential store)
-- Work-item type and enum discovery
+- Work-item type discovery
+- Documents (LiveDocs list/get, create, document parts)
 - Agent prompt path on `arctic` for natural-language commands with tool calling
 
 ## License

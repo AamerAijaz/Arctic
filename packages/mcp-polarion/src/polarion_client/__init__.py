@@ -11,21 +11,33 @@ from polarion_client.errors import (
 )
 from polarion_client.models import (
     CreatedWorkItem,
+    CreatedWorkItemLink,
     CurrentUser,
+    DeletedWorkItemLink,
+    LinkRole,
     Project,
     UpdatedWorkItem,
     WorkItem,
     WorkItemCreatePreview,
+    WorkItemLink,
+    WorkItemLinkDeletePreview,
+    WorkItemLinkPreview,
     WorkItemUpdatePreview,
 )
 
 __all__ = [
     "CreatedWorkItem",
+    "CreatedWorkItemLink",
     "CurrentUser",
+    "DeletedWorkItemLink",
+    "LinkRole",
     "Project",
     "UpdatedWorkItem",
     "WorkItem",
     "WorkItemCreatePreview",
+    "WorkItemLink",
+    "WorkItemLinkDeletePreview",
+    "WorkItemLinkPreview",
     "WorkItemUpdatePreview",
     "EnvCredentialProvider",
     "MissingCredentialsError",

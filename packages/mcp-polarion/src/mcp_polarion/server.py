@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastmcp import FastMCP
 
 from mcp_polarion.tools.auth import ClientFactory, register_auth_tools
+from mcp_polarion.tools.links import register_link_tools
 from mcp_polarion.tools.workitems import register_workitem_tools
 from polarion_client.client import PolarionClient
 from polarion_client.credentials import EnvCredentialProvider
@@ -21,6 +22,7 @@ def build_server(
     mcp = FastMCP(name="arctic")
     register_auth_tools(mcp, factory)
     register_workitem_tools(mcp, factory)
+    register_link_tools(mcp, factory)
     return mcp
 
 

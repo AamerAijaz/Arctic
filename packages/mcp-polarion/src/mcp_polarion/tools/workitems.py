@@ -120,3 +120,30 @@ def register_workitem_tools(mcp: FastMCP, client_factory: ClientFactory) -> None
         if isinstance(result, UpdatedWorkItem):
             return result.to_dict()
         raise RuntimeError("Unexpected update_work_item result.")
+
+    @mcp.tool
+    def list_work_items(
+        project_id: str,
+        query: str | None = None,
+        page_size: int = 100,
+        page_number: int = 1,
+    ) -> dict[str, Any]:
+        """List work items in a Polarion project.
+
+        Use Lucene `query` to find items, for example `type:requirement` or
+        `type:systemrequirement`. Work-item type ids are project-specific.
+        Polarion requirements are work items, not a separate resource.
+        """
+        try:
+            items = client_factory().list_work_items(
+                project_id,
+                query=query,
+                page_size=page_size,
+                page_number=page_number,
+            )
+        except PolarionError as exc:
+            raise RuntimeError(str(exc)) from None
+        return {
+            "work_items": [item.to_dict() for item in items],
+            "page_number": page_number,
+        }
