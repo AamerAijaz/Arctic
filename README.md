@@ -13,8 +13,17 @@ Today the stack supports:
 - **`list_link_roles`** — link-role ids and `linkRules` for a project
 - **`list_work_item_links` / `list_work_item_backlinks`** — outgoing and incoming links
 - **`create_work_item_link` / `delete_work_item_link`** — add or remove a link (`dry_run` by default)
+- **`list_documents` / `get_document`** — LiveDocs in a project space
+- **`create_document`** — create a LiveDoc (`dry_run` by default)
+- **`list_document_parts`** — headings, text, and embedded work items in a document
+- **`create_document_work_item`** — create a work item in a document (`dry_run` by default)
+- **`import_document`** — parse Word (`.docx`) or ReqIF (`.reqif` / `.reqifz`) locally and create a LiveDoc (`dry_run` shows the mapping preview; `--apply` creates data in Polarion)
+- **`list_project_users`** — users with a project role (default `project_assignable`)
+- **`assign_work_item`** — replace the assignee list on a work item (`dry_run` by default)
 
-Polarion **requirements are work items** (type ids such as `requirement` or `systemrequirement`). Linking a task to a requirement uses `create_work_item_link`; documents are not required and are not exposed yet.
+Polarion **requirements are work items** (type ids such as `requirement` or `systemrequirement`). Linking a task to a requirement uses `create_work_item_link`. Requirements can also live in **LiveDocs**; use document commands to list, create, import, or add in-document work items.
+
+Word files use Polarion's REST `importWordDocument` action (native LiveDoc conversion on the server). ReqIF is still parsed locally. Without `--apply`, `import-document` prints a JSON preview. With `--apply`, Arctic starts the Polarion import job; `portal_url` in the output is the Polarion wiki editor for that module.
 
 ## Repository layout
 
@@ -107,9 +116,20 @@ uv run arctic backlinks ELK ELK-12
 uv run arctic unlink --project ELK --from ELK-42 --to ELK-12 --role implements --apply
 uv run arctic update-work-item --project ELK --id ELK-42 --title "Fix login again"
 uv run arctic update-work-item --project ELK --id ELK-42 --status done --apply
+uv run arctic documents ELK
+uv run arctic document ELK Specs
+uv run arctic create-document --project ELK --module-name Specs --type req_specification --structure-link-role has_parent --title "Specifications"
+uv run arctic create-document --project ELK --module-name Specs --type req_specification --structure-link-role has_parent --apply
+uv run arctic document-parts ELK Specs
+uv run arctic create-document-work-item --project ELK --document Specs --type requirement --title "REQ-1"
+uv run arctic import-document --project ELK --file ./spec.docx
+uv run arctic import-document --project ELK --file ./spec.docx --apply
+uv run arctic project-users ELK
+uv run arctic assign-work-item --project ELK --id ELK-42 --users alice,bob
+uv run arctic assign-work-item --project ELK --id ELK-42 --users alice,bob --apply
 ```
 
-`create-work-item`, `update-work-item`, `link`, and `unlink` are **dry runs** unless you pass `--apply`. `--type` is the Polarion work-item type id (`task`, `defect`, `requirement`, and so on), which must exist in that project. `--role` is a Polarion link-role id from `link-roles`; Polarion rejects combinations that violate that project's `linkRules`.
+`create-work-item`, `update-work-item`, `link`, `unlink`, `create-document`, `create-document-work-item`, `import-document`, and `assign-work-item` are **dry runs** unless you pass `--apply`. `--type` on work-item commands is the Polarion work-item type id (`task`, `defect`, `requirement`, and so on), which must exist in that project. `--role` is a Polarion link-role id from `link-roles`; Polarion rejects combinations that violate that project's `linkRules`.
 
 On success `whoami` prints:
 
@@ -165,8 +185,9 @@ Reload MCP in Cursor. Example prompts:
 - *Who am I in Polarion?*
 - *List my Polarion projects, then dry-run a task titled Fix login in project ELK.*
 - *List requirements in ELK, then dry-run an implements link from ELK-42 to that requirement.*
+- *Dry-run importing this attached .docx as a LiveDoc in ELK, then show the preview URL after apply.*
 
-The `whoami` and `list_projects` tools return ids and names, not the token. `create_work_item`, `update_work_item`, `create_work_item_link`, and `delete_work_item_link` default to `dry_run=true`; only set `dry_run=false` when you intend to create or change data. Call `list_link_roles` before linking.
+The `whoami` and `list_projects` tools return ids and names, not the token. `create_work_item`, `update_work_item`, `create_work_item_link`, `delete_work_item_link`, `create_document`, `create_document_work_item`, `import_document`, and `assign_work_item` default to `dry_run=true`; only set `dry_run=false` when you intend to create or change data. Call `list_link_roles` before linking or creating a document. Call `list_project_users` before assigning.
 
 ## Claude Code (optional)
 
@@ -191,7 +212,7 @@ Tests mock Polarion HTTP; they do not need a live server.
 
 - `arctic login` (local credential store)
 - Work-item type discovery
-- Documents (LiveDocs list/get, create, document parts)
+- Documents — list/get/create/import, document parts, and in-document work items are available via CLI and MCP
 - Agent prompt path on `arctic` for natural-language commands with tool calling
 
 ## License

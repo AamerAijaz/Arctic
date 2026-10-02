@@ -177,3 +177,161 @@ class WorkItemLinkDeletePreview:
             "target_work_item_id": self.target_work_item_id,
             "path": self.path,
         }
+
+
+@dataclass(frozen=True)
+class Document:
+    id: str
+    module_name: str | None = None
+    title: str | None = None
+    type: str | None = None
+    status: str | None = None
+    space_id: str | None = None
+    portal_url: str | None = None
+    content_summary: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "module_name": self.module_name,
+            "title": self.title,
+            "type": self.type,
+            "status": self.status,
+            "space_id": self.space_id,
+            "portal_url": self.portal_url,
+            "content_summary": self.content_summary,
+        }
+
+
+@dataclass(frozen=True)
+class DocumentPart:
+    id: str
+    part_type: str | None = None
+    level: int | None = None
+    heading_text: str | None = None
+    text: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "part_type": self.part_type,
+            "level": self.level,
+            "heading_text": self.heading_text,
+            "text": self.text,
+        }
+
+
+@dataclass(frozen=True)
+class CreatedDocument:
+    id: str
+    portal_url: str | None = None
+
+    def to_dict(self) -> dict[str, str | None]:
+        return {"id": self.id, "portal_url": self.portal_url}
+
+
+@dataclass(frozen=True)
+class DocumentCreatePreview:
+    project_id: str
+    space_id: str
+    body: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "dry_run": True,
+            "project_id": self.project_id,
+            "space_id": self.space_id,
+            "body": self.body,
+        }
+
+
+@dataclass(frozen=True)
+class CreatedDocumentWorkItem:
+    id: str
+    part_id: str
+    portal_url: str | None = None
+
+    def to_dict(self) -> dict[str, str | None]:
+        return {
+            "id": self.id,
+            "part_id": self.part_id,
+            "portal_url": self.portal_url,
+        }
+
+
+@dataclass(frozen=True)
+class DocumentWorkItemCreatePreview:
+    project_id: str
+    work_item_body: dict[str, Any]
+    part_body: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "dry_run": True,
+            "project_id": self.project_id,
+            "work_item_body": self.work_item_body,
+            "part_body": self.part_body,
+        }
+
+
+@dataclass(frozen=True)
+class ProjectUser:
+    id: str
+    name: str | None = None
+    email: str | None = None
+
+    def to_dict(self) -> dict[str, str | None]:
+        return {"id": self.id, "name": self.name, "email": self.email}
+
+
+@dataclass(frozen=True)
+class WorkItemAssignPreview:
+    project_id: str
+    work_item_id: str
+    body: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "dry_run": True,
+            "project_id": self.project_id,
+            "work_item_id": self.work_item_id,
+            "body": self.body,
+        }
+
+
+@dataclass(frozen=True)
+class AssignedWorkItem:
+    id: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {"id": self.id}
+
+
+@dataclass(frozen=True)
+class PolarionJob:
+    id: str
+    state: str | None = None
+    status_type: str | None = None
+    message: str | None = None
+
+    def to_dict(self) -> dict[str, str | None]:
+        return {
+            "id": self.id,
+            "state": self.state,
+            "status_type": self.status_type,
+            "message": self.message,
+        }
+
+    @property
+    def is_terminal(self) -> bool:
+        status = (self.status_type or "").upper()
+        state = (self.state or "").upper()
+        if status in {"OK", "FAILED", "CANCELLED"}:
+            return True
+        return state in {"FINISHED", "FAILED", "CANCELLED", "DONE"}
+
+    @property
+    def failed(self) -> bool:
+        status = (self.status_type or "").upper()
+        state = (self.state or "").upper()
+        return status in {"FAILED", "CANCELLED"} or state in {"FAILED", "CANCELLED"}

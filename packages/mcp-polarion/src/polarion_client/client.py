@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import re
+import time
+from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from polarion_client.credentials import EnvCredentialProvider, PolarionCredentials
 from polarion_client.errors import (
@@ -17,14 +23,24 @@ from polarion_client.errors import (
     PolarionUnavailableError,
 )
 from polarion_client.models import (
+    AssignedWorkItem,
+    CreatedDocument,
+    CreatedDocumentWorkItem,
     CreatedWorkItem,
     CreatedWorkItemLink,
     CurrentUser,
     DeletedWorkItemLink,
+    Document,
+    DocumentCreatePreview,
+    DocumentPart,
+    DocumentWorkItemCreatePreview,
     LinkRole,
+    PolarionJob,
     Project,
+    ProjectUser,
     UpdatedWorkItem,
     WorkItem,
+    WorkItemAssignPreview,
     WorkItemCreatePreview,
     WorkItemLink,
     WorkItemLinkDeletePreview,
@@ -35,6 +51,17 @@ from polarion_client.models import (
 _BEARER = re.compile(r"Bearer\s+\S+", re.IGNORECASE)
 _PROJECT_FIELDS = "id,name,description,active,trackerPrefix"
 _WORK_ITEM_FIELDS = "id,title,type,status"
+_DOCUMENT_FIELDS = "id,moduleName,title,type,status"
+_DOCUMENT_DETAIL_FIELDS = "id,moduleName,title,type,status,homePageContent"
+_DOCUMENT_PART_FIELDS = "id,type,level,headingText,content"
+# Include projectRoles in the sparse fieldset so JSON:API returns the
+# relationship; otherwise include=projectRoles alone is not enough.
+_USER_FIELDS = "id,name,email,projectRoles"
+_WORD_CONTENT_TYPE = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+)
+_HTML_TAG = re.compile(r"<[^>]+>")
+_CONTENT_SUMMARY_LEN = 400
 
 
 def redact(text: str, token: str | None = None) -> str:
@@ -119,11 +146,21 @@ class PolarionClient:
         title: str,
         *,
         description: str | None = None,
+        module: str | None = None,
+        status: str | None = None,
+        severity: str | None = None,
         dry_run: bool = True,
     ) -> CreatedWorkItem | WorkItemCreatePreview:
         """POST /projects/{projectId}/workitems, or return the body when dry_run."""
         _assert_project_allowed(project_id)
-        body = _work_item_create_body(wi_type, title, description)
+        body = _work_item_create_body(
+            wi_type,
+            title,
+            description,
+            module=module,
+            status=status,
+            severity=severity,
+        )
         if dry_run:
             return WorkItemCreatePreview(project_id=project_id, body=body)
         encoded = quote(project_id, safe="")
@@ -352,6 +389,431 @@ class PolarionClient:
             raise
         return DeletedWorkItemLink(id=link_id)
 
+    def list_documents(
+        self,
+        project_id: str,
+        *,
+        space_id: str = "_default",
+        page_size: int = 100,
+        page_number: int = 1,
+    ) -> list[Document]:
+        """GET /projects/{projectId}/spaces/{spaceId}/documents."""
+        _assert_project_allowed(project_id)
+        path = _documents_path(project_id, space_id)
+        payload = self._request(
+            "GET",
+            path,
+            params={
+                "fields[documents]": _DOCUMENT_FIELDS,
+                "page[size]": page_size,
+                "page[number]": page_number,
+            },
+        )
+        creds = self._credentials.get()
+        return [
+            _parse_document(
+                item,
+                space_id=space_id,
+                rest_root=creds.rest_root,
+                project_id=project_id,
+            )
+            for item in _list_data(payload, "document list")
+        ]
+
+    def get_document(
+        self,
+        project_id: str,
+        document_name: str,
+        *,
+        space_id: str = "_default",
+    ) -> Document:
+        """GET one document including a short plain-text home page summary."""
+        _assert_project_allowed(project_id)
+        path = f"{_documents_path(project_id, space_id)}/{quote(document_name, safe='')}"
+        try:
+            payload = self._request(
+                "GET",
+                path,
+                params={"fields[documents]": _DOCUMENT_DETAIL_FIELDS},
+            )
+        except PolarionApiError as exc:
+            if exc.status_code == 404:
+                raise PolarionApiError(
+                    404,
+                    f"Document not found: {project_id}/{space_id}/{document_name}",
+                ) from None
+            raise
+        creds = self._credentials.get()
+        return _parse_document(
+            _single_data(payload, "document"),
+            space_id=space_id,
+            rest_root=creds.rest_root,
+            project_id=project_id,
+            include_content_summary=True,
+        )
+
+    def create_document(
+        self,
+        project_id: str,
+        module_name: str,
+        *,
+        title: str | None = None,
+        document_type: str,
+        structure_link_role: str,
+        home_page_content: str | None = None,
+        space_id: str = "_default",
+        dry_run: bool = True,
+    ) -> CreatedDocument | DocumentCreatePreview:
+        """POST a new document in a space, or preview the body when dry_run."""
+        _assert_project_allowed(project_id)
+        body = _document_create_body(
+            module_name,
+            document_type=document_type,
+            structure_link_role=structure_link_role,
+            title=title,
+            home_page_content=home_page_content,
+        )
+        if dry_run:
+            return DocumentCreatePreview(
+                project_id=project_id,
+                space_id=space_id,
+                body=body,
+            )
+        path = _documents_path(project_id, space_id)
+        payload = self._request("POST", path, json=body)
+        creds = self._credentials.get()
+        return _parse_created_document(
+            payload,
+            rest_root=creds.rest_root,
+            project_id=project_id,
+            space_id=space_id,
+            module_name=module_name,
+        )
+
+    def import_word_document(
+        self,
+        project_id: str,
+        file_path: str,
+        *,
+        module_name: str,
+        document_type: str,
+        title: str,
+        space_id: str = "_default",
+        configuration_id: str | None = None,
+        dry_run: bool = True,
+        wait: bool = True,
+        timeout: float = 120.0,
+        interval: float = 1.0,
+    ) -> dict[str, Any]:
+        """POST Polarion's native Word import action (multipart file + parameters)."""
+        _assert_project_allowed(project_id)
+        parameters = {
+            "documentName": module_name,
+            "documentType": document_type,
+            "title": title,
+        }
+        if configuration_id:
+            parameters["configurationId"] = configuration_id
+        if dry_run:
+            return {
+                "dry_run": True,
+                "mode": "polarion_word_import",
+                "project_id": project_id,
+                "space_id": space_id,
+                "path": (
+                    f"/projects/{project_id}/spaces/{space_id}"
+                    "/documents/actions/importWordDocument"
+                ),
+                "parameters": parameters,
+                "filename": Path(file_path).name,
+            }
+        content = Path(file_path).read_bytes()
+        filename = Path(file_path).name
+        path = (
+            f"{_documents_path(project_id, space_id)}/actions/importWordDocument"
+        )
+        payload = self._request(
+            "POST",
+            path,
+            data={"parameters": json.dumps(parameters)},
+            files={
+                "file": (filename, content, _WORD_CONTENT_TYPE),
+            },
+        )
+        job = _parse_job(payload)
+        if wait:
+            job = self.wait_for_job(job.id, timeout=timeout, interval=interval)
+        creds = self._credentials.get()
+        result: dict[str, Any] = {
+            "mode": "polarion_word_import",
+            "job": job.to_dict(),
+            "id": f"{project_id}/{space_id}/{module_name}",
+            "portal_url": document_portal_url(
+                creds.rest_root, project_id, space_id, module_name
+            ),
+        }
+        if wait and not job.failed:
+            try:
+                result["document"] = self.get_document(
+                    project_id, module_name, space_id=space_id
+                ).to_dict()
+            except PolarionApiError:
+                pass
+        return result
+
+    def get_job(self, job_id: str) -> PolarionJob:
+        """GET /jobs/{jobId}."""
+        payload = self._request(
+            "GET",
+            f"/jobs/{quote(job_id, safe='')}",
+            params={"fields[jobs]": "id,name,state,status"},
+        )
+        return _parse_job(payload)
+
+    def wait_for_job(
+        self, job_id: str, *, timeout: float = 120.0, interval: float = 1.0
+    ) -> PolarionJob:
+        deadline = time.monotonic() + timeout
+        while True:
+            job = self.get_job(job_id)
+            if job.is_terminal:
+                if job.failed:
+                    detail = job.message or f"Job {job_id} failed"
+                    raise PolarionApiError(500, detail)
+                return job
+            if time.monotonic() >= deadline:
+                raise PolarionApiError(
+                    504, f"Timed out waiting for Polarion job {job_id}"
+                )
+            time.sleep(interval)
+
+    def list_document_parts(
+        self,
+        project_id: str,
+        document_name: str,
+        *,
+        space_id: str = "_default",
+        page_size: int = 100,
+        page_number: int = 1,
+    ) -> list[DocumentPart]:
+        """GET document parts (headings, text, work-item embeds, etc.)."""
+        _assert_project_allowed(project_id)
+        path = (
+            f"{_documents_path(project_id, space_id)}/"
+            f"{quote(document_name, safe='')}/parts"
+        )
+        payload = self._request(
+            "GET",
+            path,
+            params={
+                "fields[document_parts]": _DOCUMENT_PART_FIELDS,
+                "page[size]": page_size,
+                "page[number]": page_number,
+            },
+        )
+        return [
+            _parse_document_part(item)
+            for item in _list_data(payload, "document part list")
+        ]
+
+    def create_document_work_item(
+        self,
+        project_id: str,
+        document_name: str,
+        wi_type: str,
+        title: str,
+        *,
+        space_id: str = "_default",
+        description: str | None = None,
+        status: str | None = None,
+        severity: str | None = None,
+        dry_run: bool = True,
+    ) -> CreatedDocumentWorkItem | DocumentWorkItemCreatePreview:
+        """Create a work item linked to a document and add it as a document part."""
+        _assert_project_allowed(project_id)
+        document_id = f"{project_id}/{space_id}/{document_name}"
+        work_item_body = _document_work_item_create_body(
+            wi_type,
+            title,
+            document_id,
+            description=description,
+            status=status,
+            severity=severity,
+        )
+        part_body = _document_part_work_item_body("")
+        if dry_run:
+            return DocumentWorkItemCreatePreview(
+                project_id=project_id,
+                work_item_body=work_item_body,
+                part_body=part_body,
+            )
+        encoded_project = quote(project_id, safe="")
+        wi_payload = self._request(
+            "POST",
+            f"/projects/{encoded_project}/workitems",
+            json=work_item_body,
+        )
+        created = _parse_created_work_item(wi_payload)
+        part_body = _document_part_work_item_body(created.id)
+        parts_path = (
+            f"{_documents_path(project_id, space_id)}/"
+            f"{quote(document_name, safe='')}/parts"
+        )
+        part_payload = self._request("POST", parts_path, json=part_body)
+        part_id = _parse_created_part_id(part_payload)
+        return CreatedDocumentWorkItem(
+            id=created.id,
+            part_id=part_id,
+            portal_url=created.portal_url,
+        )
+
+    def upload_document_attachment(
+        self,
+        project_id: str,
+        document_name: str,
+        filename: str,
+        content: bytes,
+        *,
+        space_id: str = "_default",
+        content_type: str = "application/octet-stream",
+    ) -> str | None:
+        """POST a multipart attachment on a document. Returns attachment id if present."""
+        _assert_project_allowed(project_id)
+        path = (
+            f"{_documents_path(project_id, space_id)}/"
+            f"{quote(document_name, safe='')}/attachments"
+        )
+        return self._upload_attachment(
+            path,
+            filename,
+            content,
+            content_type,
+            resource_type="document_attachments",
+        )
+
+    def upload_work_item_attachment(
+        self,
+        project_id: str,
+        work_item_id: str,
+        filename: str,
+        content: bytes,
+        *,
+        content_type: str = "application/octet-stream",
+    ) -> str | None:
+        """POST a multipart attachment on a work item."""
+        _assert_project_allowed(project_id)
+        path = (
+            f"/projects/{quote(project_id, safe='')}/workitems/"
+            f"{quote(work_item_id, safe='')}/attachments"
+        )
+        return self._upload_attachment(
+            path,
+            filename,
+            content,
+            content_type,
+            resource_type="workitem_attachments",
+        )
+
+    def list_project_users(
+        self,
+        project_id: str,
+        *,
+        role: str = "project_assignable",
+        page_size: int = 100,
+        page_number: int = 1,
+    ) -> list[ProjectUser]:
+        """GET /users and keep those with a matching project role."""
+        _assert_project_allowed(project_id)
+        payload = self._request(
+            "GET",
+            "/users",
+            params={
+                "fields[users]": _USER_FIELDS,
+                "include": "projectRoles",
+                "page[size]": page_size,
+                "page[number]": page_number,
+            },
+        )
+        api_count = len(_list_data(payload, "user list"))
+        logger.info(
+            "list_project_users: GET /users returned %d user(s) "
+            "(project=%s role=%s page=%d size=%d)",
+            api_count,
+            project_id,
+            role,
+            page_number,
+            page_size,
+        )
+        matched = _filter_project_users(payload, project_id, role)
+        logger.info(
+            "list_project_users: after role filter %d/%d user(s) matched "
+            "(project=%s role=%s)",
+            len(matched),
+            api_count,
+            project_id,
+            role,
+        )
+        return matched
+
+    def assign_work_item(
+        self,
+        project_id: str,
+        work_item_id: str,
+        user_ids: list[str],
+        *,
+        dry_run: bool = True,
+    ) -> AssignedWorkItem | WorkItemAssignPreview:
+        """PATCH work item assignees, or preview the body when dry_run."""
+        _assert_project_allowed(project_id)
+        body = _work_item_assign_body(project_id, work_item_id, user_ids)
+        if dry_run:
+            return WorkItemAssignPreview(
+                project_id=project_id,
+                work_item_id=work_item_id,
+                body=body,
+            )
+        project = quote(project_id, safe="")
+        item = quote(work_item_id, safe="")
+        try:
+            self._request(
+                "PATCH",
+                f"/projects/{project}/workitems/{item}",
+                json=body,
+            )
+        except PolarionApiError as exc:
+            if exc.status_code == 404:
+                raise PolarionApiError(
+                    404, f"Work item not found: {project_id}/{work_item_id}"
+                ) from None
+            raise
+        return AssignedWorkItem(id=f"{project_id}/{work_item_id}")
+
+    def _upload_attachment(
+        self,
+        path: str,
+        filename: str,
+        content: bytes,
+        content_type: str,
+        *,
+        resource_type: str,
+    ) -> str | None:
+        resource = {
+            "data": [
+                {
+                    "type": resource_type,
+                    "attributes": {"fileName": filename},
+                }
+            ]
+        }
+        files = {
+            "resource": (None, json.dumps(resource), "application/json"),
+            "files": (filename, content, content_type),
+        }
+        payload = self._request("POST", path, files=files)
+        if payload is None:
+            return None
+        return _parse_attachment_id(payload)
+
     def _request(
         self,
         method: str,
@@ -359,6 +821,8 @@ class PolarionClient:
         *,
         json: Any | None = None,
         params: dict[str, str | int] | None = None,
+        data: dict[str, str] | None = None,
+        files: dict[str, tuple[str | None, bytes | str, str]] | None = None,
     ) -> Any:
         creds = self._credentials.get()
         http = self._http or httpx.Client(timeout=self._timeout)
@@ -375,6 +839,8 @@ class PolarionClient:
                     headers=headers,
                     json=json,
                     params=params,
+                    data=data,
+                    files=files,
                 )
             except httpx.RequestError as exc:
                 raise PolarionUnavailableError(
@@ -437,13 +903,418 @@ def _error_detail(response: httpx.Response) -> str:
     return response.reason_phrase
 
 
-def _work_item_create_body(
-    wi_type: str, title: str, description: str | None
+def document_portal_url(
+    rest_root: str,
+    project_id: str,
+    space_id: str,
+    module_name: str,
+) -> str:
+    """Build the Polarion UI URL for a wiki document module.
+
+    The default space is omitted: Polarion's wiki hash is
+    ``/project/{id}/wiki/{module}``, not ``/wiki/_default/{module}``.
+    """
+    parsed = urlparse(rest_root)
+    module = quote(module_name, safe="")
+    project = quote(project_id, safe="")
+    space = (space_id or "_default").strip()
+    if space in {"", "_default"}:
+        wiki_path = f"{project}/wiki/{module}"
+    else:
+        wiki_path = f"{project}/wiki/{quote(space, safe='')}/{module}"
+    return f"{parsed.scheme}://{parsed.netloc}/polarion/#/project/{wiki_path}"
+
+
+def _documents_path(project_id: str, space_id: str) -> str:
+    return (
+        f"/projects/{quote(project_id, safe='')}/spaces/"
+        f"{quote(space_id, safe='')}/documents"
+    )
+
+
+def _strip_html(html: str) -> str:
+    return _HTML_TAG.sub("", html).strip()
+
+
+def _content_summary_from_home_page(attributes: dict[str, Any]) -> str | None:
+    raw = attributes.get("homePageContent")
+    plain = _text_value(raw)
+    if not plain:
+        return None
+    plain = _strip_html(plain)
+    if len(plain) <= _CONTENT_SUMMARY_LEN:
+        return plain or None
+    return plain[:_CONTENT_SUMMARY_LEN]
+
+
+def _document_create_body(
+    module_name: str,
+    *,
+    document_type: str,
+    structure_link_role: str,
+    title: str | None,
+    home_page_content: str | None,
+) -> dict[str, Any]:
+    attributes: dict[str, Any] = {
+        "moduleName": module_name,
+        "type": document_type,
+        "structureLinkRole": structure_link_role,
+    }
+    if title is not None:
+        attributes["title"] = title
+    if home_page_content:
+        attributes["homePageContent"] = {
+            "type": "text/html",
+            "value": home_page_content,
+        }
+    return {"data": [{"type": "documents", "attributes": attributes}]}
+
+
+def _document_work_item_create_body(
+    wi_type: str,
+    title: str,
+    document_id: str,
+    *,
+    description: str | None,
+    status: str | None,
+    severity: str | None,
 ) -> dict[str, Any]:
     attributes: dict[str, Any] = {"type": wi_type, "title": title}
     if description:
         attributes["description"] = {"type": "text/html", "value": description}
-    return {"data": [{"type": "workitems", "attributes": attributes}]}
+    if status is not None:
+        attributes["status"] = status
+    if severity is not None:
+        attributes["severity"] = severity
+    return {
+        "data": [
+            {
+                "type": "workitems",
+                "attributes": attributes,
+                "relationships": {
+                    "module": {
+                        "data": {"type": "documents", "id": document_id},
+                    }
+                },
+            }
+        ]
+    }
+
+
+def _document_part_work_item_body(work_item_id: str) -> dict[str, Any]:
+    relationships: dict[str, Any] = {}
+    if work_item_id:
+        relationships["workItem"] = {
+            "data": {"type": "workitems", "id": work_item_id},
+        }
+    return {
+        "data": [
+            {
+                "type": "document_parts",
+                "attributes": {"type": "workitem"},
+                "relationships": relationships,
+            }
+        ]
+    }
+
+
+def _work_item_assign_body(
+    project_id: str, work_item_id: str, user_ids: list[str]
+) -> dict[str, Any]:
+    return {
+        "data": {
+            "type": "workitems",
+            "id": f"{project_id}/{work_item_id}",
+            "relationships": {
+                "assignee": {
+                    "data": [{"type": "users", "id": uid} for uid in user_ids],
+                }
+            },
+        }
+    }
+
+
+def _user_has_project_role(role_id: str, project_id: str, role: str) -> bool:
+    expected = f"{project_id}/{role}"
+    if role_id == expected:
+        return True
+    prefix = f"{project_id}/"
+    return role_id.startswith(prefix) and role_id.split("/")[-1] == role
+
+
+def _filter_project_users(
+    payload: Any, project_id: str, role: str
+) -> list[ProjectUser]:
+    users = [
+        _parse_project_user(item)
+        for item in _list_data(payload, "user list")
+    ]
+    result: list[ProjectUser] = []
+    for user in users:
+        item = _find_user_data(payload, user.id)
+        if item is None:
+            logger.debug(
+                "list_project_users: skip user id=%s (missing from payload data)",
+                user.id,
+            )
+            continue
+        role_ids = _project_role_ids(item)
+        if _user_matches_project_role(item, project_id, role):
+            logger.debug(
+                "list_project_users: keep user id=%s name=%s roles=%s",
+                user.id,
+                user.name,
+                role_ids,
+            )
+            result.append(user)
+        else:
+            logger.debug(
+                "list_project_users: filter out user id=%s name=%s roles=%s "
+                "(wanted project=%s role=%s)",
+                user.id,
+                user.name,
+                role_ids,
+                project_id,
+                role,
+            )
+    return result
+
+
+def _project_role_ids(item: dict[str, Any]) -> list[str]:
+    relationships = item.get("relationships")
+    if not isinstance(relationships, dict):
+        return []
+    project_roles = relationships.get("projectRoles")
+    if not isinstance(project_roles, dict):
+        return []
+    data = project_roles.get("data")
+    if not isinstance(data, list):
+        return []
+    ids: list[str] = []
+    for entry in data:
+        if isinstance(entry, dict) and isinstance(entry.get("id"), str):
+            ids.append(entry["id"])
+    return ids
+
+
+def _find_user_data(payload: Any, user_id: str) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    for item in _list_data(payload, "user list"):
+        if isinstance(item, dict) and item.get("id") == user_id:
+            return item
+    return None
+
+
+def _user_matches_project_role(
+    item: dict[str, Any], project_id: str, role: str
+) -> bool:
+    relationships = item.get("relationships")
+    if not isinstance(relationships, dict):
+        return False
+    project_roles = relationships.get("projectRoles")
+    if not isinstance(project_roles, dict):
+        return False
+    data = project_roles.get("data")
+    if not isinstance(data, list):
+        return False
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        role_id = entry.get("id")
+        if isinstance(role_id, str) and _user_has_project_role(
+            role_id, project_id, role
+        ):
+            return True
+    return False
+
+
+def _parse_project_user(item: Any) -> ProjectUser:
+    if not isinstance(item, dict):
+        raise PolarionError("Polarion returned an unexpected user response.")
+    user_id = item.get("id")
+    if not isinstance(user_id, str) or not user_id:
+        raise PolarionError("Polarion returned a user without an id.")
+    attributes = item.get("attributes") if isinstance(item.get("attributes"), dict) else {}
+    return ProjectUser(
+        id=user_id,
+        name=_text_value(attributes.get("name")),
+        email=_text_value(attributes.get("email")),
+    )
+
+
+def _parse_document(
+    item: Any,
+    *,
+    space_id: str,
+    rest_root: str,
+    project_id: str,
+    include_content_summary: bool = False,
+) -> Document:
+    if not isinstance(item, dict):
+        raise PolarionError("Polarion returned an unexpected document response.")
+    doc_id = item.get("id")
+    if not isinstance(doc_id, str) or not doc_id:
+        raise PolarionError("Polarion returned a document without an id.")
+    attributes = item.get("attributes") if isinstance(item.get("attributes"), dict) else {}
+    module_name = _text_value(attributes.get("moduleName"))
+    links = item.get("links") if isinstance(item.get("links"), dict) else {}
+    portal = links.get("portal")
+    portal_url: str | None
+    if isinstance(portal, str) and portal:
+        portal_url = portal
+    elif module_name:
+        portal_url = document_portal_url(
+            rest_root, project_id, space_id, module_name
+        )
+    else:
+        portal_url = None
+    content_summary = None
+    if include_content_summary:
+        content_summary = _content_summary_from_home_page(attributes)
+    return Document(
+        id=doc_id,
+        module_name=module_name,
+        title=_text_value(attributes.get("title")),
+        type=_text_value(attributes.get("type")),
+        status=_text_value(attributes.get("status")),
+        space_id=space_id,
+        portal_url=portal_url,
+        content_summary=content_summary,
+    )
+
+
+def _parse_created_document(
+    payload: Any,
+    *,
+    rest_root: str,
+    project_id: str,
+    space_id: str,
+    module_name: str,
+) -> CreatedDocument:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    item: Any = None
+    if isinstance(data, list) and data:
+        item = data[0]
+    elif isinstance(data, dict):
+        item = data
+    if not isinstance(item, dict):
+        raise PolarionError("Polarion returned an unexpected create-document response.")
+    doc_id = item.get("id")
+    if not isinstance(doc_id, str) or not doc_id:
+        raise PolarionError("Polarion create-document response had no id.")
+    links = item.get("links") if isinstance(item.get("links"), dict) else {}
+    portal = links.get("portal")
+    portal_url: str | None
+    if isinstance(portal, str) and portal:
+        portal_url = portal
+    else:
+        portal_url = document_portal_url(
+            rest_root, project_id, space_id, module_name
+        )
+    return CreatedDocument(id=doc_id, portal_url=portal_url)
+
+
+def _parse_document_part(item: Any) -> DocumentPart:
+    if not isinstance(item, dict):
+        raise PolarionError("Polarion returned an unexpected document part.")
+    part_id = item.get("id")
+    if not isinstance(part_id, str) or not part_id:
+        raise PolarionError("Polarion returned a document part without an id.")
+    attributes = item.get("attributes") if isinstance(item.get("attributes"), dict) else {}
+    level = attributes.get("level")
+    level_int: int | None = level if isinstance(level, int) else None
+    raw_content = _text_value(attributes.get("content"))
+    text = _strip_html(raw_content) if raw_content else None
+    if text == "":
+        text = None
+    return DocumentPart(
+        id=part_id,
+        part_type=_text_value(attributes.get("type")),
+        level=level_int,
+        heading_text=_text_value(attributes.get("headingText")),
+        text=text,
+    )
+
+
+def _parse_created_part_id(payload: Any) -> str:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    item: Any = None
+    if isinstance(data, list) and data:
+        item = data[0]
+    elif isinstance(data, dict):
+        item = data
+    if not isinstance(item, dict):
+        raise PolarionError("Polarion returned an unexpected create-part response.")
+    part_id = item.get("id")
+    if not isinstance(part_id, str) or not part_id:
+        raise PolarionError("Polarion create-part response had no id.")
+    return part_id
+
+
+def _parse_job(payload: Any) -> PolarionJob:
+    if not isinstance(payload, dict):
+        raise PolarionError("Polarion returned an unexpected job response.")
+    data = payload.get("data")
+    item: Any = None
+    if isinstance(data, list) and data:
+        item = data[0]
+    elif isinstance(data, dict):
+        item = data
+    if not isinstance(item, dict):
+        raise PolarionError("Polarion returned an unexpected job response.")
+    job_id = item.get("id")
+    if not isinstance(job_id, str) or not job_id:
+        raise PolarionError("Polarion job response had no id.")
+    attributes = item.get("attributes") if isinstance(item.get("attributes"), dict) else {}
+    status = attributes.get("status") if isinstance(attributes.get("status"), dict) else {}
+    return PolarionJob(
+        id=job_id,
+        state=_text_value(attributes.get("state")),
+        status_type=_text_value(status.get("type")),
+        message=_text_value(status.get("message")),
+    )
+
+
+def _parse_attachment_id(payload: Any) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    data = payload.get("data")
+    item: Any = None
+    if isinstance(data, list) and data:
+        item = data[0]
+    elif isinstance(data, dict):
+        item = data
+    if not isinstance(item, dict):
+        return None
+    attachment_id = item.get("id")
+    if isinstance(attachment_id, str) and attachment_id:
+        return attachment_id
+    return None
+
+
+def _work_item_create_body(
+    wi_type: str,
+    title: str,
+    description: str | None,
+    *,
+    module: str | None = None,
+    status: str | None = None,
+    severity: str | None = None,
+) -> dict[str, Any]:
+    attributes: dict[str, Any] = {"type": wi_type, "title": title}
+    if description:
+        attributes["description"] = {"type": "text/html", "value": description}
+    if status is not None:
+        attributes["status"] = status
+    if severity is not None:
+        attributes["severity"] = severity
+    entry: dict[str, Any] = {"type": "workitems", "attributes": attributes}
+    if module is not None:
+        entry["relationships"] = {
+            "module": {"data": {"type": "documents", "id": module}},
+        }
+    return {"data": [entry]}
 
 
 def _work_item_update_body(
