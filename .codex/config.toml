@@ -1,0 +1,5 @@
+[mcp_servers.arctic]
+command = "C:\\WINDOWS\\py.exe"
+args = ["-m", "uv", "--cache-dir", "C:\\Users\\mdzak\\Desktop\\PolarionAI\\.uv-cache", "run", "--directory", "C:\\Users\\mdzak\\Desktop\\PolarionAI", "mcp-polarion"]
+cwd = "C:\\Users\\mdzak\\Desktop\\PolarionAI"
+startup_timeout_sec = 30
