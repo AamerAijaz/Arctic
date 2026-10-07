@@ -65,3 +65,26 @@ def register_user_tools(mcp: FastMCP, client_factory: ClientFactory) -> None:
         if isinstance(result, AssignedWorkItem):
             return result.to_dict()
         raise RuntimeError("Unexpected assign_work_item result.")
+
+    @mcp.tool
+    def assign_work_items_round_robin(
+        project_id: str,
+        work_item_ids: list[str],
+        user_ids: list[str] | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Assign work items to project users in round-robin order.
+
+        `work_item_ids` are local ids (for example ELK-42). When `user_ids`
+        is omitted, uses list_project_users sorted by id. Fails when no users
+        are available. Default dry_run=true; set dry_run=false to apply.
+        """
+        try:
+            return client_factory().assign_work_items_round_robin(
+                project_id,
+                work_item_ids,
+                user_ids=user_ids,
+                dry_run=dry_run,
+            )
+        except PolarionError as exc:
+            raise RuntimeError(str(exc)) from None

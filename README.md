@@ -8,18 +8,23 @@ Today the stack supports:
 - **`list_projects` / `get_project`** — discover Polarion project ids
 - **`list_work_items`** — query work items (Lucene, for example `type:requirement`)
 - **`create_work_item`** — create one work item (`dry_run` by default)
-- **`update_work_item`** — update title, description, and/or status (`dry_run` by default)
+- **`update_work_item`** — update title, description, status, and/or type (`change_type_to`, `dry_run` by default)
 - **`get_work_item`** — read a work item back after create or update
 - **`list_link_roles`** — link-role ids and `linkRules` for a project
 - **`list_work_item_links` / `list_work_item_backlinks`** — outgoing and incoming links
 - **`create_work_item_link` / `delete_work_item_link`** — add or remove a link (`dry_run` by default)
 - **`list_documents` / `get_document`** — LiveDocs in a project space
 - **`create_document`** — create a LiveDoc (`dry_run` by default)
-- **`list_document_parts`** — headings, text, and embedded work items in a document
+- **`list_document_parts`** — headings, text, and embedded work items in a document (`work_item_id` when Polarion linked the part)
+- **`convert_heading_to_work_item`** — change a heading work item's type in place (`dry_run` by default)
 - **`create_document_work_item`** — create a work item in a document (`dry_run` by default)
 - **`import_document`** — parse Word (`.docx`) or ReqIF (`.reqif` / `.reqifz`) locally and create a LiveDoc (`dry_run` shows the mapping preview; `--apply` creates data in Polarion)
 - **`list_project_users`** — users with a project role (default `project_assignable`)
 - **`assign_work_item`** — replace the assignee list on a work item (`dry_run` by default)
+- **`list_requirement_blocks`** — parse H2 requirement blocks under H1 sections after import
+- **`convert_headings_to_work_items`** — batch convert heading parts to a work-item type (`dry_run` by default)
+- **`promote_document_requirements`** — full promote flow: convert, round-robin assign (`dry_run` by default; source paragraphs stay unless `delete_source_text`)
+- **`assign_work_items_round_robin`** — assign many work items across users in order (`dry_run` by default)
 
 Polarion **requirements are work items** (type ids such as `requirement` or `systemrequirement`). Linking a task to a requirement uses `create_work_item_link`. Requirements can also live in **LiveDocs**; use document commands to list, create, import, or add in-document work items.
 
@@ -116,6 +121,7 @@ uv run arctic backlinks ELK ELK-12
 uv run arctic unlink --project ELK --from ELK-42 --to ELK-12 --role implements --apply
 uv run arctic update-work-item --project ELK --id ELK-42 --title "Fix login again"
 uv run arctic update-work-item --project ELK --id ELK-42 --status done --apply
+uv run arctic update-work-item --project ELK --id ELK-5 --change-type-to hardware
 uv run arctic documents ELK
 uv run arctic document ELK Specs
 uv run arctic create-document --project ELK --module-name Specs --type req_specification --structure-link-role has_parent --title "Specifications"
@@ -124,12 +130,17 @@ uv run arctic document-parts ELK Specs
 uv run arctic create-document-work-item --project ELK --document Specs --type requirement --title "REQ-1"
 uv run arctic import-document --project ELK --file ./spec.docx
 uv run arctic import-document --project ELK --file ./spec.docx --apply
+uv run arctic requirement-blocks ELK Specs --sections Functional,Physical
+uv run arctic promote-requirements --project ELK --document Specs --sections Functional,Physical --type hardware
+uv run arctic promote-requirements --project ELK --document Specs --sections Functional,Physical --type hardware --apply
+uv run arctic convert-headings --project ELK --document Specs --type hardware --items-file ./items.json
+uv run arctic assign-round-robin --project ELK --ids DP-1,DP-2 --users alice,bob --apply
 uv run arctic project-users ELK
 uv run arctic assign-work-item --project ELK --id ELK-42 --users alice,bob
 uv run arctic assign-work-item --project ELK --id ELK-42 --users alice,bob --apply
 ```
 
-`create-work-item`, `update-work-item`, `link`, `unlink`, `create-document`, `create-document-work-item`, `import-document`, and `assign-work-item` are **dry runs** unless you pass `--apply`. `--type` on work-item commands is the Polarion work-item type id (`task`, `defect`, `requirement`, and so on), which must exist in that project. `--role` is a Polarion link-role id from `link-roles`; Polarion rejects combinations that violate that project's `linkRules`.
+`create-work-item`, `update-work-item`, `link`, `unlink`, `create-document`, `create-document-work-item`, `import-document`, `convert-headings`, `promote-requirements`, `assign-round-robin`, and `assign-work-item` are **dry runs** unless you pass `--apply`. `--type` on work-item commands is the Polarion work-item type id (`task`, `defect`, `requirement`, and so on), which must exist in that project. `--role` is a Polarion link-role id from `link-roles`; Polarion rejects combinations that violate that project's `linkRules`.
 
 On success `whoami` prints:
 
@@ -155,7 +166,7 @@ Project config is in [`.mcp.json`](.mcp.json):
 ```json
 {
   "mcpServers": {
-    "arctic": {
+    "mcp-polarion": {
       "type": "stdio",
       "command": "uv",
       "args": ["run", "--directory", ".", "mcp-polarion"]
@@ -186,8 +197,11 @@ Reload MCP in Cursor. Example prompts:
 - *List my Polarion projects, then dry-run a task titled Fix login in project ELK.*
 - *List requirements in ELK, then dry-run an implements link from ELK-42 to that requirement.*
 - *Dry-run importing this attached .docx as a LiveDoc in ELK, then show the preview URL after apply.*
+- *Import `/path/on/host/spec.docx` into ELK with `import_document` (dry_run first), then `promote_document_requirements` on module Specs with sections Functional, Physical, Power, Performance, Non-Functional and type hardware (dry_run first).*
 
-The `whoami` and `list_projects` tools return ids and names, not the token. `create_work_item`, `update_work_item`, `create_work_item_link`, `delete_work_item_link`, `create_document`, `create_document_work_item`, `import_document`, and `assign_work_item` default to `dry_run=true`; only set `dry_run=false` when you intend to create or change data. Call `list_link_roles` before linking or creating a document. Call `list_project_users` before assigning.
+Word import needs a filesystem path the MCP **host** can read (for example the repo root on your machine). Browsers and chat UIs do not upload the `.docx` through MCP; put the file where the `mcp-polarion` process can open it and pass that path to `import_document`.
+
+The `whoami` and `list_projects` tools return ids and names, not the token. `create_work_item`, `update_work_item`, `create_work_item_link`, `delete_work_item_link`, `create_document`, `create_document_work_item`, `convert_heading_to_work_item`, `convert_headings_to_work_items`, `import_document`, `promote_document_requirements`, `assign_work_item`, and `assign_work_items_round_robin` default to `dry_run=true`; only set `dry_run=false` when you intend to create or change data. `list_requirement_blocks` is read-only. Call `list_link_roles` before linking or creating a document. Call `list_project_users` before assigning.
 
 ## Claude Code (optional)
 

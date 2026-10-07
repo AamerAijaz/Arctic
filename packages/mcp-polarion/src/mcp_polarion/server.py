@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -35,20 +36,36 @@ def build_server(
 
 
 def _configure_logging() -> None:
-    """Send client diagnostics to stderr so stdio MCP JSON stays on stdout."""
-    level_name = os.environ.get("ARCTIC_LOG_LEVEL", "INFO").upper()
-    level = getattr(logging, level_name, logging.INFO)
+    """Send diagnostics to stderr so stdio MCP JSON stays on stdout.
+
+    Cursor tags every stderr line as an MCP error, including FastMCP INFO
+    banners. Keep the default quiet; set ARCTIC_LOG_LEVEL=INFO to debug.
+    """
+    level_name = os.environ.get("ARCTIC_LOG_LEVEL", "WARNING").upper()
+    level = getattr(logging, level_name, logging.WARNING)
     logging.basicConfig(
         level=level,
         format="%(levelname)s %(name)s: %(message)s",
         stream=sys.stderr,
         force=True,
     )
+    logging.getLogger("fastmcp").setLevel(level)
+    logging.getLogger("mcp").setLevel(max(level, logging.WARNING))
 
 
 def main() -> None:
+    os.environ.setdefault("FASTMCP_SHOW_SERVER_BANNER", "false")
+    os.environ.setdefault("FASTMCP_LOG_LEVEL", "WARNING")
     _configure_logging()
-    build_server().run()
+    mcp = build_server()
+    tools = asyncio.run(mcp.list_tools())
+    names = sorted(getattr(tool, "name", "") for tool in tools)
+    logging.getLogger("mcp_polarion").debug(
+        "Starting arctic MCP with %d tools: %s",
+        len(names),
+        ", ".join(names),
+    )
+    mcp.run(show_banner=False)
 
 
 if __name__ == "__main__":

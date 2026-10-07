@@ -40,13 +40,17 @@ class WorkItem:
     title: str | None = None
     type: str | None = None
     status: str | None = None
+    description: str | None = None
+    assignee_ids: tuple[str, ...] = ()
 
-    def to_dict(self) -> dict[str, str | None]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "title": self.title,
             "type": self.type,
             "status": self.status,
+            "description": self.description,
+            "assignee_ids": list(self.assignee_ids),
         }
 
 
@@ -85,14 +89,18 @@ class WorkItemUpdatePreview:
     project_id: str
     work_item_id: str
     body: dict[str, Any]
+    change_type_to: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "dry_run": True,
             "project_id": self.project_id,
             "work_item_id": self.work_item_id,
             "body": self.body,
         }
+        if self.change_type_to is not None:
+            payload["change_type_to"] = self.change_type_to
+        return payload
 
 
 @dataclass(frozen=True)
@@ -210,6 +218,7 @@ class DocumentPart:
     level: int | None = None
     heading_text: str | None = None
     text: str | None = None
+    work_item_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -218,6 +227,7 @@ class DocumentPart:
             "level": self.level,
             "heading_text": self.heading_text,
             "text": self.text,
+            "work_item_id": self.work_item_id,
         }
 
 
@@ -260,10 +270,48 @@ class CreatedDocumentWorkItem:
 
 
 @dataclass(frozen=True)
+class ConvertedHeadingWorkItem:
+    id: str
+    part_id: str
+    change_type_to: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "id": self.id,
+            "part_id": self.part_id,
+            "change_type_to": self.change_type_to,
+        }
+
+
+@dataclass(frozen=True)
+class ConvertHeadingPreview:
+    project_id: str
+    document_name: str
+    part_id: str
+    work_item_id: str
+    change_type_to: str
+    body: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "dry_run": True,
+            "project_id": self.project_id,
+            "document_name": self.document_name,
+            "part_id": self.part_id,
+            "work_item_id": self.work_item_id,
+            "change_type_to": self.change_type_to,
+            "body": self.body,
+        }
+
+
+@dataclass(frozen=True)
 class DocumentWorkItemCreatePreview:
     project_id: str
     work_item_body: dict[str, Any]
     part_body: dict[str, Any]
+    after: str | None = None
+    before: str | None = None
+    parent: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -271,6 +319,9 @@ class DocumentWorkItemCreatePreview:
             "project_id": self.project_id,
             "work_item_body": self.work_item_body,
             "part_body": self.part_body,
+            "after": self.after,
+            "before": self.before,
+            "parent": self.parent,
         }
 
 

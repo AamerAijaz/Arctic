@@ -34,6 +34,11 @@ from polarion_client.models import (
     WorkItemUpdatePreview,
 )
 
+
+def _split_csv(value: str) -> list[str]:
+    return [part.strip() for part in value.split(",") if part.strip()]
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="arctic")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -74,6 +79,11 @@ def build_parser() -> argparse.ArgumentParser:
     update.add_argument("--title")
     update.add_argument("--description")
     update.add_argument("--status")
+    update.add_argument(
+        "--change-type-to",
+        dest="change_type_to",
+        help="Polarion work-item type id (PATCH changeTypeTo)",
+    )
     update.add_argument(
         "--apply",
         action="store_true",
@@ -248,6 +258,93 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="PATCH Polarion. Without this flag, print the request body only.",
     )
+
+    requirement_blocks = sub.add_parser(
+        "requirement-blocks",
+        help="List parsed requirement blocks from a LiveDoc",
+    )
+    requirement_blocks.add_argument("project_id")
+    requirement_blocks.add_argument("document_name")
+    requirement_blocks.add_argument(
+        "--sections",
+        required=True,
+        help="Comma-separated H1 section titles",
+    )
+    requirement_blocks.add_argument("--space", default="_default", dest="space_id")
+    requirement_blocks.add_argument(
+        "--heading-level",
+        type=int,
+        default=2,
+        dest="heading_level",
+    )
+
+    convert_headings = sub.add_parser(
+        "convert-headings",
+        help="Batch convert heading parts (dry-run unless --apply)",
+    )
+    convert_headings.add_argument("--project", required=True, dest="project_id")
+    convert_headings.add_argument("--document", required=True, dest="document_name")
+    convert_headings.add_argument("--type", required=True, dest="wi_type")
+    convert_headings.add_argument("--items-file", required=True, dest="items_file")
+    convert_headings.add_argument("--space", default="_default", dest="space_id")
+    convert_headings.add_argument(
+        "--apply",
+        action="store_true",
+        help="PATCH Polarion. Without this flag, print the preview JSON only.",
+    )
+
+    assign_round_robin = sub.add_parser(
+        "assign-round-robin",
+        help="Round-robin assign work items (dry-run unless --apply)",
+    )
+    assign_round_robin.add_argument("--project", required=True, dest="project_id")
+    assign_round_robin.add_argument(
+        "--ids",
+        required=True,
+        help="Comma-separated work item ids",
+    )
+    assign_round_robin.add_argument(
+        "--users",
+        help="Comma-separated user ids (default: all project assignable users)",
+    )
+    assign_round_robin.add_argument(
+        "--apply",
+        action="store_true",
+        help="PATCH Polarion. Without this flag, print the preview JSON only.",
+    )
+
+    promote_requirements = sub.add_parser(
+        "promote-requirements",
+        help="Promote LiveDoc requirements to a type (dry-run unless --apply)",
+    )
+    promote_requirements.add_argument("--project", required=True, dest="project_id")
+    promote_requirements.add_argument("--document", required=True, dest="document_name")
+    promote_requirements.add_argument(
+        "--sections",
+        required=True,
+        help="Comma-separated H1 section titles",
+    )
+    promote_requirements.add_argument("--type", required=True, dest="wi_type")
+    promote_requirements.add_argument("--space", default="_default", dest="space_id")
+    promote_requirements.add_argument(
+        "--users",
+        help="Comma-separated user ids for round-robin assign",
+    )
+    promote_requirements.add_argument(
+        "--no-assign",
+        action="store_true",
+        help="Skip round-robin assignment after convert",
+    )
+    promote_requirements.add_argument(
+        "--delete-source-text",
+        action="store_true",
+        help="Delete paragraph parts under each heading after converting.",
+    )
+    promote_requirements.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply converts and assigns in Polarion.",
+    )
     return parser
 
 
@@ -372,7 +469,8 @@ def run_update_work_item(
     title: str | None,
     description: str | None,
     status: str | None,
-    apply: bool,
+    change_type_to: str | None = None,
+    apply: bool = False,
     out: TextIO | None = None,
 ) -> int:
     def action(stream: TextIO) -> None:
@@ -382,10 +480,13 @@ def run_update_work_item(
             title=title,
             description=description,
             status=status,
+            change_type_to=change_type_to,
             dry_run=not apply,
         )
         if isinstance(result, WorkItemUpdatePreview):
             print("dry_run: true", file=stream)
+            if result.change_type_to:
+                print(f"changeTypeTo: {result.change_type_to}", file=stream)
             print(json.dumps(result.body, indent=2), file=stream)
             return
         if isinstance(result, UpdatedWorkItem):
@@ -562,7 +663,8 @@ def _print_document_parts(parts: list[DocumentPart], stream: TextIO) -> None:
     for part in parts:
         heading = f"  {part.heading_text}" if part.heading_text else ""
         ptype = f"  {part.part_type}" if part.part_type else ""
-        print(f"{part.id}{ptype}{heading}", file=stream)
+        work_item = f"  {part.work_item_id}" if part.work_item_id else ""
+        print(f"{part.id}{ptype}{heading}{work_item}", file=stream)
 
 
 def _print_project_users(users: list[ProjectUser], stream: TextIO) -> None:
@@ -842,6 +944,107 @@ def run_assign_work_item(
     return _handle(action, out=out)
 
 
+def run_requirement_blocks(
+    client: PolarionClient,
+    project_id: str,
+    document_name: str,
+    *,
+    sections: list[str],
+    space_id: str = "_default",
+    heading_level: int = 2,
+    out: TextIO | None = None,
+) -> int:
+    def action(stream: TextIO) -> None:
+        blocks = client.list_requirement_blocks(
+            project_id,
+            document_name,
+            sections,
+            space_id=space_id,
+            heading_level=heading_level,
+        )
+        print(json.dumps([block.to_dict() for block in blocks], indent=2), file=stream)
+
+    return _handle(action, out=out)
+
+
+def run_convert_headings(
+    client: PolarionClient,
+    *,
+    project_id: str,
+    document_name: str,
+    wi_type: str,
+    items_file: str,
+    space_id: str,
+    apply: bool,
+    out: TextIO | None = None,
+) -> int:
+    def action(stream: TextIO) -> None:
+        items = json.loads(Path(items_file).read_text(encoding="utf-8"))
+        result = client.convert_headings_to_work_items(
+            project_id,
+            document_name,
+            items,
+            wi_type,
+            space_id=space_id,
+            dry_run=not apply,
+        )
+        print(json.dumps(result, indent=2), file=stream)
+
+    return _handle(action, out=out)
+
+
+def run_assign_round_robin(
+    client: PolarionClient,
+    *,
+    project_id: str,
+    work_item_ids: list[str],
+    user_ids: list[str] | None,
+    apply: bool,
+    out: TextIO | None = None,
+) -> int:
+    def action(stream: TextIO) -> None:
+        result = client.assign_work_items_round_robin(
+            project_id,
+            work_item_ids,
+            user_ids=user_ids,
+            dry_run=not apply,
+        )
+        print(json.dumps(result, indent=2), file=stream)
+
+    return _handle(action, out=out)
+
+
+def run_promote_requirements(
+    client: PolarionClient,
+    *,
+    project_id: str,
+    document_name: str,
+    sections: list[str],
+    wi_type: str,
+    space_id: str,
+    assign: bool,
+    delete_source_text: bool,
+    user_ids: list[str] | None,
+    apply: bool,
+    out: TextIO | None = None,
+) -> int:
+    def action(stream: TextIO) -> None:
+        result = client.promote_document_requirements(
+            project_id,
+            document_name,
+            sections,
+            wi_type,
+            space_id=space_id,
+            assign=assign,
+            delete_source_text=delete_source_text,
+            user_ids=user_ids,
+            dry_run=not apply,
+        )
+        print(json.dumps(result, indent=2), file=stream)
+
+    return _handle(action, out=out)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     client = PolarionClient(EnvCredentialProvider())
@@ -875,6 +1078,7 @@ def main(argv: list[str] | None = None) -> int:
             title=args.title,
             description=args.description,
             status=args.status,
+            change_type_to=args.change_type_to,
             apply=args.apply,
         )
     if args.command == "work-items":
@@ -980,11 +1184,53 @@ def main(argv: list[str] | None = None) -> int:
             page_number=args.page_number,
         )
     if args.command == "assign-work-item":
-        user_ids = [u.strip() for u in args.users.split(",") if u.strip()]
+        user_ids = _split_csv(args.users)
         return run_assign_work_item(
             client,
             project_id=args.project_id,
             work_item_id=args.work_item_id,
+            user_ids=user_ids,
+            apply=args.apply,
+        )
+    if args.command == "requirement-blocks":
+        return run_requirement_blocks(
+            client,
+            args.project_id,
+            args.document_name,
+            sections=_split_csv(args.sections),
+            space_id=args.space_id,
+            heading_level=args.heading_level,
+        )
+    if args.command == "convert-headings":
+        return run_convert_headings(
+            client,
+            project_id=args.project_id,
+            document_name=args.document_name,
+            wi_type=args.wi_type,
+            items_file=args.items_file,
+            space_id=args.space_id,
+            apply=args.apply,
+        )
+    if args.command == "assign-round-robin":
+        user_ids = _split_csv(args.users) if args.users else None
+        return run_assign_round_robin(
+            client,
+            project_id=args.project_id,
+            work_item_ids=_split_csv(args.ids),
+            user_ids=user_ids,
+            apply=args.apply,
+        )
+    if args.command == "promote-requirements":
+        user_ids = _split_csv(args.users) if args.users else None
+        return run_promote_requirements(
+            client,
+            project_id=args.project_id,
+            document_name=args.document_name,
+            sections=_split_csv(args.sections),
+            wi_type=args.wi_type,
+            space_id=args.space_id,
+            assign=not args.no_assign,
+            delete_source_text=args.delete_source_text,
             user_ids=user_ids,
             apply=args.apply,
         )

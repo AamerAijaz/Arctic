@@ -24,6 +24,8 @@ from polarion_client.errors import (
 )
 from polarion_client.models import (
     AssignedWorkItem,
+    ConvertedHeadingWorkItem,
+    ConvertHeadingPreview,
     CreatedDocument,
     CreatedDocumentWorkItem,
     CreatedWorkItem,
@@ -51,9 +53,10 @@ from polarion_client.models import (
 _BEARER = re.compile(r"Bearer\s+\S+", re.IGNORECASE)
 _PROJECT_FIELDS = "id,name,description,active,trackerPrefix"
 _WORK_ITEM_FIELDS = "id,title,type,status"
+_WORK_ITEM_DETAIL_FIELDS = "id,title,type,status,description,assignee"
 _DOCUMENT_FIELDS = "id,moduleName,title,type,status"
 _DOCUMENT_DETAIL_FIELDS = "id,moduleName,title,type,status,homePageContent"
-_DOCUMENT_PART_FIELDS = "id,type,level,headingText,content"
+_DOCUMENT_PART_FIELDS = "id,type,level,headingText,content,workItem"
 # Include projectRoles in the sparse fieldset so JSON:API returns the
 # relationship; otherwise include=projectRoles alone is not enough.
 _USER_FIELDS = "id,name,email,projectRoles"
@@ -180,7 +183,10 @@ class PolarionClient:
             payload = self._request(
                 "GET",
                 f"/projects/{project}/workitems/{item}",
-                params={"fields[workitems]": _WORK_ITEM_FIELDS},
+                params={
+                    "fields[workitems]": _WORK_ITEM_DETAIL_FIELDS,
+                    "include": "assignee",
+                },
             )
         except PolarionApiError as exc:
             if exc.status_code == 404:
@@ -198,38 +204,46 @@ class PolarionClient:
         title: str | None = None,
         description: str | None = None,
         status: str | None = None,
+        change_type_to: str | None = None,
         dry_run: bool = True,
     ) -> UpdatedWorkItem | WorkItemUpdatePreview:
         """PATCH /projects/{projectId}/workitems/{workItemId}, or preview when dry_run."""
         _assert_project_allowed(project_id)
+        local_id = _work_item_local_id(work_item_id)
         body = _work_item_update_body(
             project_id,
-            work_item_id,
+            local_id,
             title=title,
             description=description,
             status=status,
+            allow_empty=change_type_to is not None,
         )
         if dry_run:
             return WorkItemUpdatePreview(
                 project_id=project_id,
-                work_item_id=work_item_id,
+                work_item_id=local_id,
                 body=body,
+                change_type_to=change_type_to,
             )
         project = quote(project_id, safe="")
-        item = quote(work_item_id, safe="")
+        item = quote(local_id, safe="")
+        params: dict[str, str | int] | None = None
+        if change_type_to:
+            params = {"changeTypeTo": change_type_to}
         try:
             self._request(
                 "PATCH",
                 f"/projects/{project}/workitems/{item}",
                 json=body,
+                params=params,
             )
         except PolarionApiError as exc:
             if exc.status_code == 404:
                 raise PolarionApiError(
-                    404, f"Work item not found: {project_id}/{work_item_id}"
+                    404, f"Work item not found: {project_id}/{local_id}"
                 ) from None
             raise
-        return UpdatedWorkItem(id=f"{project_id}/{work_item_id}")
+        return UpdatedWorkItem(id=f"{project_id}/{local_id}")
 
     def list_work_items(
         self,
@@ -607,6 +621,7 @@ class PolarionClient:
             path,
             params={
                 "fields[document_parts]": _DOCUMENT_PART_FIELDS,
+                "include": "workItem",
                 "page[size]": page_size,
                 "page[number]": page_number,
             },
@@ -615,6 +630,89 @@ class PolarionClient:
             _parse_document_part(item)
             for item in _list_data(payload, "document part list")
         ]
+
+    def get_document_part(
+        self,
+        project_id: str,
+        document_name: str,
+        part_id: str,
+        *,
+        space_id: str = "_default",
+    ) -> DocumentPart:
+        """GET one document part, including its work-item relationship when present."""
+        _assert_project_allowed(project_id)
+        local_id = _document_part_local_id(part_id)
+        path = (
+            f"{_documents_path(project_id, space_id)}/"
+            f"{quote(document_name, safe='')}/parts/"
+            f"{quote(local_id, safe='')}"
+        )
+        try:
+            payload = self._request(
+                "GET",
+                path,
+                params={
+                    "fields[document_parts]": _DOCUMENT_PART_FIELDS,
+                    "include": "workItem",
+                },
+            )
+        except PolarionApiError as exc:
+            if exc.status_code == 404:
+                raise PolarionApiError(
+                    404,
+                    f"Document part not found: "
+                    f"{project_id}/{space_id}/{document_name}/{local_id}",
+                ) from None
+            raise
+        return _parse_document_part(_single_data(payload, "document part"))
+
+    def convert_heading_to_work_item(
+        self,
+        project_id: str,
+        document_name: str,
+        part_id: str,
+        wi_type: str,
+        *,
+        space_id: str = "_default",
+        description: str | None = None,
+        dry_run: bool = True,
+    ) -> ConvertedHeadingWorkItem | ConvertHeadingPreview:
+        """Change a heading work item's type in place (Polarion changeTypeTo)."""
+        _assert_project_allowed(project_id)
+        part = self.get_document_part(
+            project_id, document_name, part_id, space_id=space_id
+        )
+        if part.part_type and part.part_type != "heading":
+            raise PolarionError(
+                f"Part {part.id} is type {part.part_type!r}, not a heading."
+            )
+        if not part.work_item_id:
+            raise PolarionError(
+                f"Heading {part.id} has no work item to convert. "
+                "Polarion did not link this heading part to a work item."
+            )
+        local_wi = _work_item_local_id(part.work_item_id)
+        updated = self.update_work_item(
+            project_id,
+            local_wi,
+            description=description,
+            change_type_to=wi_type,
+            dry_run=dry_run,
+        )
+        if isinstance(updated, WorkItemUpdatePreview):
+            return ConvertHeadingPreview(
+                project_id=project_id,
+                document_name=document_name,
+                part_id=part.id,
+                work_item_id=updated.work_item_id,
+                change_type_to=wi_type,
+                body=updated.body,
+            )
+        return ConvertedHeadingWorkItem(
+            id=updated.id,
+            part_id=part.id,
+            change_type_to=wi_type,
+        )
 
     def create_document_work_item(
         self,
@@ -627,9 +725,17 @@ class PolarionClient:
         description: str | None = None,
         status: str | None = None,
         severity: str | None = None,
+        after: str | None = None,
+        before: str | None = None,
+        parent: str | None = None,
         dry_run: bool = True,
     ) -> CreatedDocumentWorkItem | DocumentWorkItemCreatePreview:
-        """Create a work item linked to a document and add it as a document part."""
+        """Create a work item linked to a document and add it as a document part.
+
+        Polarion always appends a new part at the end of the LiveDoc. Pass
+        `parent` (and optional `after`/`before`) so the part is moved under
+        the matching heading in the same call.
+        """
         _assert_project_allowed(project_id)
         document_id = f"{project_id}/{space_id}/{document_name}"
         work_item_body = _document_work_item_create_body(
@@ -646,6 +752,9 @@ class PolarionClient:
                 project_id=project_id,
                 work_item_body=work_item_body,
                 part_body=part_body,
+                after=after,
+                before=before,
+                parent=parent,
             )
         encoded_project = quote(project_id, safe="")
         wi_payload = self._request(
@@ -661,11 +770,90 @@ class PolarionClient:
         )
         part_payload = self._request("POST", parts_path, json=part_body)
         part_id = _parse_created_part_id(part_payload)
+        if after or before or parent:
+            self.move_document_part(
+                project_id,
+                document_name,
+                part_id,
+                space_id=space_id,
+                after=after,
+                before=before,
+                parent=parent,
+                dry_run=False,
+            )
         return CreatedDocumentWorkItem(
             id=created.id,
             part_id=part_id,
             portal_url=created.portal_url,
         )
+
+    def move_document_part(
+        self,
+        project_id: str,
+        document_name: str,
+        part_id: str,
+        *,
+        space_id: str = "_default",
+        after: str | None = None,
+        before: str | None = None,
+        parent: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """POST parts/{partId}/actions/move so a part sits after/before another."""
+        _assert_project_allowed(project_id)
+        body: dict[str, str] = {}
+        if after:
+            body["after"] = after
+        if before:
+            body["before"] = before
+        if parent:
+            body["parent"] = parent
+        local_id = _document_part_local_id(part_id)
+        path = (
+            f"{_documents_path(project_id, space_id)}/"
+            f"{quote(document_name, safe='')}/parts/"
+            f"{quote(local_id, safe='')}/actions/move"
+        )
+        if dry_run:
+            return {
+                "dry_run": True,
+                "path": path,
+                "body": body,
+            }
+        self._request("POST", path, json=body)
+        return {
+            "id": part_id,
+            "moved": True,
+            "after": after,
+            "before": before,
+            "parent": parent,
+        }
+
+    def delete_document_parts(
+        self,
+        project_id: str,
+        document_name: str,
+        part_ids: list[str],
+        *,
+        space_id: str = "_default",
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """DELETE leftover text parts (plain paragraphs) from a LiveDoc."""
+        _assert_project_allowed(project_id)
+        body = {
+            "data": [
+                {"type": "document_parts", "id": pid}
+                for pid in part_ids
+            ]
+        }
+        path = (
+            f"{_documents_path(project_id, space_id)}/"
+            f"{quote(document_name, safe='')}/parts"
+        )
+        if dry_run:
+            return {"dry_run": True, "path": path, "body": body}
+        self._request("DELETE", path, json=body)
+        return {"deleted": part_ids}
 
     def upload_document_attachment(
         self,
@@ -787,6 +975,102 @@ class PolarionClient:
                 ) from None
             raise
         return AssignedWorkItem(id=f"{project_id}/{work_item_id}")
+
+    def list_requirement_blocks(
+        self,
+        project_id: str,
+        document_name: str,
+        sections: list[str],
+        *,
+        space_id: str = "_default",
+        heading_level: int = 2,
+    ):
+        """Parse LiveDoc parts into requirement blocks for the given sections."""
+        from polarion_client import promote
+
+        _assert_project_allowed(project_id)
+        return promote.list_requirement_blocks(
+            self,
+            project_id,
+            document_name,
+            sections,
+            space_id=space_id,
+            heading_level=heading_level,
+        )
+
+    def convert_headings_to_work_items(
+        self,
+        project_id: str,
+        document_name: str,
+        items: list[dict[str, Any]],
+        type: str,
+        *,
+        space_id: str = "_default",
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Batch convert heading parts to work items (optional delete of text parts)."""
+        from polarion_client import promote
+
+        _assert_project_allowed(project_id)
+        return promote.convert_headings_to_work_items(
+            self,
+            project_id,
+            document_name,
+            items,
+            type,
+            space_id=space_id,
+            dry_run=dry_run,
+        )
+
+    def assign_work_items_round_robin(
+        self,
+        project_id: str,
+        work_item_ids: list[str],
+        *,
+        user_ids: list[str] | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Assign work items to project users in round-robin order."""
+        from polarion_client import promote
+
+        _assert_project_allowed(project_id)
+        return promote.assign_work_items_round_robin(
+            self,
+            project_id,
+            work_item_ids,
+            user_ids=user_ids,
+            dry_run=dry_run,
+        )
+
+    def promote_document_requirements(
+        self,
+        project_id: str,
+        document_name: str,
+        sections: list[str],
+        type: str,
+        *,
+        space_id: str = "_default",
+        assign: bool = True,
+        delete_source_text: bool = False,
+        user_ids: list[str] | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Promote parsed requirement blocks: convert type, assign (optional delete)."""
+        from polarion_client import promote
+
+        _assert_project_allowed(project_id)
+        return promote.promote_document_requirements(
+            self,
+            project_id,
+            document_name,
+            sections,
+            type,
+            space_id=space_id,
+            assign=assign,
+            delete_source_text=delete_source_text,
+            user_ids=user_ids,
+            dry_run=dry_run,
+        )
 
     def _upload_attachment(
         self,
@@ -930,6 +1214,51 @@ def _documents_path(project_id: str, space_id: str) -> str:
         f"/projects/{quote(project_id, safe='')}/spaces/"
         f"{quote(space_id, safe='')}/documents"
     )
+
+
+def _document_part_local_id(part_id: str) -> str:
+    if "/" in part_id:
+        return part_id.rsplit("/", 1)[-1]
+    return part_id
+
+
+def _work_item_local_id(work_item_id: str) -> str:
+    if "/" in work_item_id:
+        return work_item_id.rsplit("/", 1)[-1]
+    return work_item_id
+
+
+def _relationship_resource_id(item: dict[str, Any], name: str) -> str | None:
+    relationships = item.get("relationships")
+    if not isinstance(relationships, dict):
+        return None
+    rel = relationships.get(name)
+    if not isinstance(rel, dict):
+        return None
+    data = rel.get("data")
+    if not isinstance(data, dict):
+        return None
+    ident = data.get("id")
+    if isinstance(ident, str) and ident:
+        return ident
+    return None
+
+
+def _relationship_resource_ids(item: dict[str, Any], name: str) -> tuple[str, ...]:
+    relationships = item.get("relationships")
+    if not isinstance(relationships, dict):
+        return ()
+    rel = relationships.get(name)
+    if not isinstance(rel, dict):
+        return ()
+    data = rel.get("data")
+    if not isinstance(data, list):
+        return ()
+    ids: list[str] = []
+    for entry in data:
+        if isinstance(entry, dict) and isinstance(entry.get("id"), str):
+            ids.append(entry["id"])
+    return tuple(ids)
 
 
 def _strip_html(html: str) -> str:
@@ -1234,6 +1563,7 @@ def _parse_document_part(item: Any) -> DocumentPart:
         level=level_int,
         heading_text=_text_value(attributes.get("headingText")),
         text=text,
+        work_item_id=_relationship_resource_id(item, "workItem"),
     )
 
 
@@ -1324,6 +1654,7 @@ def _work_item_update_body(
     title: str | None,
     description: str | None,
     status: str | None,
+    allow_empty: bool = False,
 ) -> dict[str, Any]:
     attributes: dict[str, Any] = {}
     if title is not None:
@@ -1332,9 +1663,9 @@ def _work_item_update_body(
         attributes["description"] = {"type": "text/html", "value": description}
     if status is not None:
         attributes["status"] = status
-    if not attributes:
+    if not attributes and not allow_empty:
         raise PolarionError(
-            "Provide at least one of title, description, or status to update."
+            "Provide at least one of title, description, status, or change_type_to."
         )
     return {
         "data": {
@@ -1440,6 +1771,8 @@ def _parse_work_item(item: Any) -> WorkItem:
         title=_text_value(attributes.get("title")),
         type=_text_value(attributes.get("type")),
         status=_text_value(attributes.get("status")),
+        description=_text_value(attributes.get("description")),
+        assignee_ids=_relationship_resource_ids(item, "assignee"),
     )
 
 

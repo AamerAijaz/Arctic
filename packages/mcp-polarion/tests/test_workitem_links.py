@@ -38,7 +38,9 @@ def test_list_work_items_query(env: None) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert unquote(request.url.path).endswith("/projects/ELK/workitems")
         assert request.url.params["query"] == "type:requirement"
-        assert request.url.params["fields[workitems]"] == "id,title,type,status"
+        fields = request.url.params["fields[workitems]"]
+        assert fields == "id,title,type,status"
+        assert "description" not in fields
         return httpx.Response(
             200,
             json={
