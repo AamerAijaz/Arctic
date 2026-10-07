@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from urllib.parse import unquote
 
 import httpx
@@ -167,6 +168,11 @@ def test_create_work_item_bad_type_redacts_token(env: None) -> None:
 def test_get_work_item(env: None) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert unquote(request.url.path).endswith("/projects/ELK/workitems/ELK-42")
+        assert (
+            request.url.params["fields[workitems]"]
+            == "id,title,type,status,description,assignee"
+        )
+        assert request.url.params["include"] == "assignee"
         return httpx.Response(
             200,
             json={
@@ -177,6 +183,12 @@ def test_get_work_item(env: None) -> None:
                         "title": "Fix login",
                         "type": "task",
                         "status": "open",
+                        "description": {"type": "text/html", "value": "<p>SSO</p>"},
+                    },
+                    "relationships": {
+                        "assignee": {
+                            "data": [{"type": "users", "id": "alice"}],
+                        }
                     },
                 }
             },
@@ -187,6 +199,21 @@ def test_get_work_item(env: None) -> None:
     assert item.title == "Fix login"
     assert item.type == "task"
     assert item.status == "open"
+    assert item.description == "<p>SSO</p>"
+    assert item.assignee_ids == ("alice",)
+    assert item.to_dict()["assignee_ids"] == ["alice"]
+
+
+def test_list_work_items_omits_description_fields(env: None) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        fields = request.url.params["fields[workitems]"]
+        assert fields == "id,title,type,status"
+        assert "description" not in fields
+        assert "assignee" not in fields
+        return httpx.Response(200, json={"data": []})
+
+    items = _client(handler).list_work_items("ELK")
+    assert items == []
 
 
 def test_create_blocked_by_allowlist(env: None, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -255,6 +282,25 @@ def test_update_work_item_requires_fields(env: None) -> None:
 
     with pytest.raises(PolarionError, match="at least one"):
         _client(handler).update_work_item("ELK", "ELK-42", dry_run=False)
+
+
+def test_update_work_item_change_type_to_apply(env: None) -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = unquote(request.url.path)
+        seen["query"] = dict(request.url.params)
+        seen["body"] = json.loads(request.read().decode())
+        return httpx.Response(204)
+
+    result = _client(handler).update_work_item(
+        "ELK", "ELK-5", change_type_to="hardware", dry_run=False
+    )
+    assert isinstance(result, UpdatedWorkItem)
+    assert result.id == "ELK/ELK-5"
+    assert str(seen["path"]).endswith("/projects/ELK/workitems/ELK-5")
+    assert seen["query"] == {"changeTypeTo": "hardware"}
+    assert seen["body"]["data"]["attributes"] == {}
 
 
 def test_update_work_item_not_found(env: None) -> None:

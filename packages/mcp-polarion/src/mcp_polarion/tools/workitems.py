@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from fastmcp import FastMCP
 
@@ -81,8 +83,12 @@ def register_workitem_tools(mcp: FastMCP, client_factory: ClientFactory) -> None
         raise RuntimeError("Unexpected create_work_item result.")
 
     @mcp.tool
-    def get_work_item(project_id: str, work_item_id: str) -> dict[str, str | None]:
-        """Get one work item after create, by project id and work item id."""
+    def get_work_item(project_id: str, work_item_id: str) -> dict[str, Any]:
+        """Get one work item after create, by project id and work item id.
+
+        Includes `description` and `assignee_ids`. Use this to verify
+        promote_document_requirements. List endpoints do not fetch those fields.
+        """
         try:
             return client_factory().get_work_item(project_id, work_item_id).to_dict()
         except PolarionError as exc:
@@ -95,14 +101,16 @@ def register_workitem_tools(mcp: FastMCP, client_factory: ClientFactory) -> None
         title: str | None = None,
         description: str | None = None,
         status: str | None = None,
+        change_type_to: str | None = None,
         dry_run: bool = True,
     ) -> dict[str, Any]:
         """Update one work item in a Polarion project.
 
-        Provide at least one of title, description, or status. Call
-        get_work_item first if you need the current values. Default
-        dry_run=true only returns the PATCH body Polarion would receive;
-        set dry_run=false to apply the update.
+        Provide at least one of title, description, status, or
+        change_type_to. `change_type_to` is a Polarion work-item type id
+        (PATCH query changeTypeTo). Call get_work_item first if you need
+        the current values. Default dry_run=true only returns the PATCH
+        body Polarion would receive; set dry_run=false to apply.
         """
         try:
             result = client_factory().update_work_item(
@@ -111,6 +119,7 @@ def register_workitem_tools(mcp: FastMCP, client_factory: ClientFactory) -> None
                 title=title,
                 description=description,
                 status=status,
+                change_type_to=change_type_to,
                 dry_run=dry_run,
             )
         except PolarionError as exc:
@@ -147,3 +156,47 @@ def register_workitem_tools(mcp: FastMCP, client_factory: ClientFactory) -> None
             "work_items": [item.to_dict() for item in items],
             "page_number": page_number,
         }
+
+    @mcp.tool
+    def upload_work_item_attachment(
+        project_id: str,
+        work_item_id: str,
+        file_path: str,
+        filename: str | None = None,
+        content_type: str = "application/octet-stream",
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Attach a local file to an existing Polarion work item.
+
+        `file_path` is a path the MCP process can read. Optional `filename`
+        overrides the name stored in Polarion (defaults to the path's
+        basename). Default dry_run=true only returns the POST path Polarion
+        would receive; set dry_run=false to upload.
+        """
+        path = Path(file_path)
+        if not path.is_file():
+            raise RuntimeError(f"Attachment file not found: {path}")
+        stored_name = filename or path.name
+        polarion_path = (
+            f"/projects/{quote(project_id, safe='')}/workitems/"
+            f"{quote(work_item_id, safe='')}/attachments"
+        )
+        if dry_run:
+            return {
+                "dry_run": True,
+                "path": polarion_path,
+                "filename": stored_name,
+                "content_type": content_type,
+                "byte_size": path.stat().st_size,
+            }
+        try:
+            attachment_id = client_factory().upload_work_item_attachment(
+                project_id,
+                work_item_id,
+                stored_name,
+                path.read_bytes(),
+                content_type=content_type,
+            )
+        except PolarionError as exc:
+            raise RuntimeError(str(exc)) from None
+        return {"id": attachment_id, "filename": stored_name}

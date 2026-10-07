@@ -12,6 +12,8 @@ from polarion_client.errors import PolarionError
 from polarion_client.import_apply import apply_import_preview
 from polarion_client.import_files import parse_import_file
 from polarion_client.models import (
+    ConvertedHeadingWorkItem,
+    ConvertHeadingPreview,
     CreatedDocument,
     CreatedDocumentWorkItem,
     DocumentCreatePreview,
@@ -110,8 +112,10 @@ def register_document_tools(mcp: FastMCP, client_factory: ClientFactory) -> None
     ) -> dict[str, Any]:
         """List parts of a LiveDoc (headings, text blocks, work-item embeds).
 
-        Call this after the user edits a document in Polarion to refresh
-        structure and content.
+        Heading and work-item parts include `work_item_id` when Polarion
+        linked that part to a work item. Use that id with
+        convert_heading_to_work_item. Call this after the user edits a
+        document in Polarion to refresh structure and content.
         """
         try:
             parts = client_factory().list_document_parts(
@@ -129,6 +133,93 @@ def register_document_tools(mcp: FastMCP, client_factory: ClientFactory) -> None
         }
 
     @mcp.tool
+    def move_document_part(
+        project_id: str,
+        document_name: str,
+        part_id: str,
+        after: str | None = None,
+        before: str | None = None,
+        parent: str | None = None,
+        space_id: str = "_default",
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Move a LiveDoc part so it sits after or before another part.
+
+        Use list_document_parts first. `parent` nests a work-item part under a
+        heading or another work item. `after`/`before` must be siblings of that parent.
+        """
+        try:
+            return client_factory().move_document_part(
+                project_id,
+                document_name,
+                part_id,
+                space_id=space_id,
+                after=after,
+                before=before,
+                parent=parent,
+                dry_run=dry_run,
+            )
+        except PolarionError as exc:
+            raise RuntimeError(str(exc)) from None
+
+    @mcp.tool
+    def delete_document_parts(
+        project_id: str,
+        document_name: str,
+        part_ids: list[str],
+        space_id: str = "_default",
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Delete LiveDoc parts (typically leftover plain-text paragraphs)."""
+        try:
+            return client_factory().delete_document_parts(
+                project_id,
+                document_name,
+                part_ids,
+                space_id=space_id,
+                dry_run=dry_run,
+            )
+        except PolarionError as exc:
+            raise RuntimeError(str(exc)) from None
+
+    @mcp.tool
+    def convert_heading_to_work_item(
+        project_id: str,
+        document_name: str,
+        part_id: str,
+        type: str,
+        description: str | None = None,
+        space_id: str = "_default",
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Convert a LiveDoc heading work item to another work-item type in place.
+
+        This is Polarion's heading-to-work-item change (PATCH changeTypeTo),
+        not create_document_work_item. Call list_document_parts first and pass
+        a heading `part_id`. `type` is the target Polarion work-item type id
+        (for example requirement or hardware). Optional `description` is HTML
+        set on the same PATCH. Default dry_run=true only returns the PATCH
+        Polarion would receive; set dry_run=false to apply.
+        """
+        try:
+            result = client_factory().convert_heading_to_work_item(
+                project_id,
+                document_name,
+                part_id,
+                type,
+                space_id=space_id,
+                description=description,
+                dry_run=dry_run,
+            )
+        except PolarionError as exc:
+            raise RuntimeError(str(exc)) from None
+        if isinstance(result, ConvertHeadingPreview):
+            return result.to_dict()
+        if isinstance(result, ConvertedHeadingWorkItem):
+            return result.to_dict()
+        raise RuntimeError("Unexpected convert_heading_to_work_item result.")
+
+    @mcp.tool
     def create_document_work_item(
         project_id: str,
         document_name: str,
@@ -136,12 +227,18 @@ def register_document_tools(mcp: FastMCP, client_factory: ClientFactory) -> None
         title: str,
         space_id: str = "_default",
         description: str | None = None,
+        after: str | None = None,
+        before: str | None = None,
+        parent: str | None = None,
         dry_run: bool = True,
     ) -> dict[str, Any]:
         """Create a work item and embed it in a LiveDoc as a document part.
 
-        `type` is the Polarion work-item type id. Default dry_run=true only
-        returns the work-item and part bodies Polarion would receive.
+        `type` is the Polarion work-item type id. Polarion appends new parts
+        at the end; pass `parent` (a heading part id from list_document_parts)
+        so the work item is nested under that section. `after`/`before` place
+        it among siblings of that parent. Default dry_run=true only returns
+        the work-item and part bodies Polarion would receive.
         """
         try:
             result = client_factory().create_document_work_item(
@@ -151,6 +248,9 @@ def register_document_tools(mcp: FastMCP, client_factory: ClientFactory) -> None
                 title,
                 space_id=space_id,
                 description=description,
+                after=after,
+                before=before,
+                parent=parent,
                 dry_run=dry_run,
             )
         except PolarionError as exc:
@@ -241,6 +341,98 @@ def register_document_tools(mcp: FastMCP, client_factory: ClientFactory) -> None
                 document_type=document_type,
                 structure_link_role=structure_link_role,
                 space_id=space_id,
+            )
+        except PolarionError as exc:
+            raise RuntimeError(str(exc)) from None
+
+    @mcp.tool
+    def list_requirement_blocks(
+        project_id: str,
+        document_name: str,
+        sections: list[str],
+        space_id: str = "_default",
+        heading_level: int = 2,
+    ) -> dict[str, Any]:
+        """List requirement blocks parsed from a LiveDoc after import.
+
+        Call import_document first, then pass H1 section titles (for example
+        Functional, Physical). Fetches document parts with internal paging and
+        returns H2 headings under those sections with body text and part ids.
+        """
+        try:
+            blocks = client_factory().list_requirement_blocks(
+                project_id,
+                document_name,
+                sections,
+                space_id=space_id,
+                heading_level=heading_level,
+            )
+        except PolarionError as exc:
+            raise RuntimeError(str(exc)) from None
+        return {"blocks": [block.to_dict() for block in blocks]}
+
+    @mcp.tool
+    def convert_headings_to_work_items(
+        project_id: str,
+        document_name: str,
+        items: list[dict[str, Any]],
+        type: str,
+        space_id: str = "_default",
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Batch convert LiveDoc heading parts to a work-item type.
+
+        Each item needs `part_id` (heading part id). Optional `description`
+        (HTML) and `delete_part_ids` (text parts to remove after convert).
+        `type` is the target Polarion work-item type id. Prefer
+        promote_document_requirements for the full import-to-hardware flow; this
+        tool is the composable batch convert step.
+        """
+        try:
+            return client_factory().convert_headings_to_work_items(
+                project_id,
+                document_name,
+                items,
+                type,
+                space_id=space_id,
+                dry_run=dry_run,
+            )
+        except PolarionError as exc:
+            raise RuntimeError(str(exc)) from None
+
+    @mcp.tool
+    def promote_document_requirements(
+        project_id: str,
+        document_name: str,
+        sections: list[str],
+        type: str,
+        space_id: str = "_default",
+        assign: bool = True,
+        delete_source_text: bool = False,
+        user_ids: list[str] | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Promote imported LiveDoc requirements to a work-item type.
+
+        After import_document, converts H2 headings under the given H1
+        `sections` to `type`, fills description with Global ID, Project ID, and
+        body text, and round-robin assigns to project users. Source paragraphs
+        stay in the LiveDoc unless `delete_source_text` is true. Skips empty
+        headings and items already of `type`. Word import still needs a
+        filesystem path on the MCP host. Default dry_run=true; set
+        dry_run=false to apply.
+        """
+        try:
+            return client_factory().promote_document_requirements(
+                project_id,
+                document_name,
+                sections,
+                type,
+                space_id=space_id,
+                assign=assign,
+                delete_source_text=delete_source_text,
+                user_ids=user_ids,
+                dry_run=dry_run,
             )
         except PolarionError as exc:
             raise RuntimeError(str(exc)) from None
