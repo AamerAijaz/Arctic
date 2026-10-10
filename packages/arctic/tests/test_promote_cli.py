@@ -132,10 +132,10 @@ def test_promote_requirements_apply_via_main(
         == 0
     )
     assert captured["dry_run"] is False
-    assert captured["delete_source_text"] is False
+    assert captured["delete_source_text"] is True
 
 
-def test_promote_requirements_delete_source_text_flag(
+def test_promote_requirements_keep_source_text_flag(
     env: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -158,12 +158,12 @@ def test_promote_requirements_delete_source_text_flag(
                 "Functional",
                 "--type",
                 "hardware",
-                "--delete-source-text",
+                "--keep-source-text",
             ]
         )
         == 0
     )
-    assert captured["delete_source_text"] is True
+    assert captured["delete_source_text"] is False
 
 
 def test_convert_headings_reads_items_file(

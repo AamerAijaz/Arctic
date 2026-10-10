@@ -71,6 +71,7 @@ class RequirementBlock:
     lines: list[str]
     description: str
     description_html: str
+    marked_work_item_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -78,6 +79,7 @@ class RequirementBlock:
             "title": self.title,
             "heading_part_id": self.heading_part_id,
             "work_item_id": self.work_item_id,
+            "marked_work_item_id": self.marked_work_item_id,
             "text_part_ids": list(self.text_part_ids),
             "lines": list(self.lines),
             "description": self.description,
@@ -107,6 +109,7 @@ def _flush_block(
     title: str | None,
     heading_part_id: str | None,
     work_item_id: str | None,
+    marked_work_item_id: str | None,
     text_part_ids: list[str],
     lines: list[str],
 ) -> RequirementBlock | None:
@@ -122,6 +125,7 @@ def _flush_block(
         lines=list(lines),
         description=description,
         description_html=to_html(description),
+        marked_work_item_id=marked_work_item_id,
     )
 
 
@@ -139,16 +143,19 @@ def parse_requirement_blocks(
     block_title: str | None = None
     block_heading_id: str | None = None
     block_work_item_id: str | None = None
+    block_marked_id: str | None = None
     block_text_ids: list[str] = []
     block_lines: list[str] = []
 
     def close_block() -> None:
-        nonlocal block_title, block_heading_id, block_work_item_id, block_text_ids, block_lines
+        nonlocal block_title, block_heading_id, block_work_item_id
+        nonlocal block_marked_id, block_text_ids, block_lines
         flushed = _flush_block(
             current_section,
             block_title,
             block_heading_id,
             block_work_item_id,
+            block_marked_id,
             block_text_ids,
             block_lines,
         )
@@ -157,6 +164,7 @@ def parse_requirement_blocks(
         block_title = None
         block_heading_id = None
         block_work_item_id = None
+        block_marked_id = None
         block_text_ids = []
         block_lines = []
 
@@ -184,8 +192,8 @@ def parse_requirement_blocks(
             if cleaned:
                 block_lines.append(cleaned)
         elif part_type == "workitem":
-            if part.work_item_id and block_work_item_id is None:
-                block_work_item_id = part.work_item_id
+            if part.work_item_id:
+                block_marked_id = part.work_item_id
 
     close_block()
     return blocks

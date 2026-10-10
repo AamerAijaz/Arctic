@@ -23,7 +23,7 @@ Today the stack supports:
 - **`assign_work_item`** — replace the assignee list on a work item (`dry_run` by default)
 - **`list_requirement_blocks`** — parse H2 requirement blocks under H1 sections after import
 - **`convert_headings_to_work_items`** — batch convert heading parts to a work-item type (`dry_run` by default)
-- **`promote_document_requirements`** — full promote flow: convert, round-robin assign (`dry_run` by default; source paragraphs stay unless `delete_source_text`)
+- **`promote_document_requirements`** — insert hardware work items under H2 headings (Recycle Bin + in-place part), round-robin assign (`dry_run` by default; source paragraphs are deleted unless `delete_source_text` is false)
 - **`assign_work_items_round_robin`** — assign many work items across users in order (`dry_run` by default)
 
 Polarion **requirements are work items** (type ids such as `requirement` or `systemrequirement`). Linking a task to a requirement uses `create_work_item_link`. Requirements can also live in **LiveDocs**; use document commands to list, create, import, or add in-document work items.

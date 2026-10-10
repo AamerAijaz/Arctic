@@ -198,6 +198,11 @@ def build_parser() -> argparse.ArgumentParser:
     create_doc_wi.add_argument("--description")
     create_doc_wi.add_argument("--space", default="_default", dest="space_id")
     create_doc_wi.add_argument(
+        "--previous-part",
+        dest="previous_part",
+        help="Insert the work-item part after this document part id.",
+    )
+    create_doc_wi.add_argument(
         "--apply",
         action="store_true",
         help="POST to Polarion. Without this flag, print the request bodies only.",
@@ -333,13 +338,15 @@ def build_parser() -> argparse.ArgumentParser:
     promote_requirements.add_argument(
         "--no-assign",
         action="store_true",
-        help="Skip round-robin assignment after convert",
+        help="Skip round-robin assignment after insert",
     )
     promote_requirements.add_argument(
-        "--delete-source-text",
-        action="store_true",
-        help="Delete paragraph parts under each heading after converting.",
+        "--keep-source-text",
+        dest="delete_source_text",
+        action="store_false",
+        help="Leave original paragraphs under each heading after inserting.",
     )
+    promote_requirements.set_defaults(delete_source_text=True)
     promote_requirements.add_argument(
         "--apply",
         action="store_true",
@@ -803,6 +810,7 @@ def run_create_document_work_item(
     description: str | None,
     space_id: str,
     apply: bool,
+    previous_part: str | None = None,
     out: TextIO | None = None,
 ) -> int:
     def action(stream: TextIO) -> None:
@@ -813,6 +821,7 @@ def run_create_document_work_item(
             title,
             space_id=space_id,
             description=description,
+            previous_part=previous_part,
             dry_run=not apply,
         )
         if isinstance(result, DocumentWorkItemCreatePreview):
@@ -1160,6 +1169,7 @@ def main(argv: list[str] | None = None) -> int:
             title=args.title,
             description=args.description,
             space_id=args.space_id,
+            previous_part=args.previous_part,
             apply=args.apply,
         )
     if args.command == "import-document":

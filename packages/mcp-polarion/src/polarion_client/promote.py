@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from polarion_client.errors import PolarionError
-from polarion_client.models import ConvertedHeadingWorkItem, ConvertHeadingPreview
+from polarion_client.models import (
+    ConvertedHeadingWorkItem,
+    ConvertHeadingPreview,
+    CreatedDocumentWorkItem,
+    DocumentWorkItemCreatePreview,
+)
 from polarion_client.requirement_blocks import (
     RequirementBlock,
     is_promotable,
@@ -177,22 +182,86 @@ def assign_work_items_round_robin(
 
 
 def skip_reason(
-    client: Any,
-    project_id: str,
+    _client: Any,
+    _project_id: str,
     block: RequirementBlock,
-    wi_type: str,
+    _wi_type: str,
 ) -> str | None:
     if not is_promotable(block):
         return "not_promotable"
-    if block.work_item_id:
-        local = block.work_item_id.split("/")[-1]
-        try:
-            item = client.get_work_item(project_id, local)
-        except Exception:
-            return None
-        if item.type == wi_type:
-            return "already_converted"
+    if block.marked_work_item_id:
+        return "already_marked"
     return None
+
+
+def insert_requirement_work_items(
+    client: Any,
+    project_id: str,
+    document_name: str,
+    blocks: list[RequirementBlock],
+    wi_type: str,
+    *,
+    space_id: str = "_default",
+    delete_source_text: bool = True,
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    results: list[dict[str, Any]] = []
+    for block in blocks:
+        delete_part_ids = list(block.text_part_ids) if delete_source_text else []
+        entry: dict[str, Any] = {
+            "heading_part_id": block.heading_part_id,
+            "title": block.title,
+            "ok": False,
+        }
+        if dry_run and delete_part_ids:
+            entry["delete_part_ids"] = delete_part_ids
+        try:
+            created = client.create_document_work_item(
+                project_id,
+                document_name,
+                wi_type,
+                block.title,
+                space_id=space_id,
+                description=block.description_html,
+                previous_part=block.heading_part_id,
+                dry_run=dry_run,
+            )
+        except Exception as exc:
+            entry["error"] = str(exc)
+            results.append(entry)
+            continue
+
+        if isinstance(created, DocumentWorkItemCreatePreview):
+            entry["work_item_id"] = f"new/{block.heading_part_id}"
+            entry["previous_part"] = created.previous_part
+        elif isinstance(created, CreatedDocumentWorkItem):
+            entry["work_item_id"] = created.id
+            entry["part_id"] = created.part_id
+        else:
+            entry["error"] = f"Unexpected create result: {type(created)!r}"
+            results.append(entry)
+            continue
+
+        entry["ok"] = True
+        if dry_run:
+            results.append(entry)
+            continue
+
+        if delete_part_ids:
+            try:
+                delete_result = client.delete_document_parts(
+                    project_id,
+                    document_name,
+                    delete_part_ids,
+                    space_id=space_id,
+                    dry_run=False,
+                )
+                entry["deleted"] = delete_result
+            except Exception as exc:
+                entry["delete_error"] = str(exc)
+        results.append(entry)
+
+    return {"dry_run": dry_run, "results": results}
 
 
 def promote_document_requirements(
@@ -204,7 +273,7 @@ def promote_document_requirements(
     *,
     space_id: str = "_default",
     assign: bool = True,
-    delete_source_text: bool = False,
+    delete_source_text: bool = True,
     user_ids: list[str] | None = None,
     dry_run: bool = True,
 ) -> dict[str, Any]:
@@ -225,40 +294,30 @@ def promote_document_requirements(
                     "title": block.title,
                     "heading_part_id": block.heading_part_id,
                     "work_item_id": block.work_item_id,
+                    "marked_work_item_id": block.marked_work_item_id,
                     "reason": reason,
                 }
             )
             continue
         planned.append(block)
 
-    convert_items = [
-        {
-            "part_id": block.heading_part_id,
-            "description": block.description_html,
-            "delete_part_ids": list(block.text_part_ids)
-            if delete_source_text
-            else [],
-        }
-        for block in planned
-    ]
-    convert_result: dict[str, Any] = {"dry_run": dry_run, "results": []}
-    if convert_items:
-        convert_result = convert_headings_to_work_items(
+    insert_result: dict[str, Any] = {"dry_run": dry_run, "results": []}
+    if planned:
+        insert_result = insert_requirement_work_items(
             client,
             project_id,
             document_name,
-            convert_items,
+            planned,
             wi_type,
             space_id=space_id,
+            delete_source_text=delete_source_text,
             dry_run=dry_run,
         )
 
     converted_ids: list[str] = []
-    for result, block in zip(convert_result.get("results", []), planned):
+    for result in insert_result.get("results", []):
         if result.get("ok") and result.get("work_item_id"):
             converted_ids.append(result["work_item_id"].split("/")[-1])
-        elif result.get("ok") and block.work_item_id:
-            converted_ids.append(block.work_item_id.split("/")[-1])
 
     assign_result: dict[str, Any] | None = None
     if assign:
@@ -295,7 +354,7 @@ def promote_document_requirements(
         portal_url = None
 
     errors = [
-        r for r in convert_result.get("results", []) if not r.get("ok")
+        r for r in insert_result.get("results", []) if not r.get("ok")
     ]
     if assign_result:
         errors = errors + assign_result.get("errors", [])
@@ -308,7 +367,8 @@ def promote_document_requirements(
         "portal_url": portal_url,
         "planned_count": len(planned),
         "skipped": skipped,
-        "converted": convert_result,
+        "inserted": insert_result,
+        "converted": insert_result,
         "assigned": assign_result,
         "errors": errors,
     }

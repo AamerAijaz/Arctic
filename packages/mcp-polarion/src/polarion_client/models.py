@@ -312,6 +312,8 @@ class DocumentWorkItemCreatePreview:
     after: str | None = None
     before: str | None = None
     parent: str | None = None
+    previous_part: str | None = None
+    next_part: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -322,6 +324,8 @@ class DocumentWorkItemCreatePreview:
             "after": self.after,
             "before": self.before,
             "parent": self.parent,
+            "previous_part": self.previous_part,
+            "next_part": self.next_part,
         }
 
 

@@ -230,15 +230,19 @@ def register_document_tools(mcp: FastMCP, client_factory: ClientFactory) -> None
         after: str | None = None,
         before: str | None = None,
         parent: str | None = None,
+        previous_part: str | None = None,
+        next_part: str | None = None,
         dry_run: bool = True,
     ) -> dict[str, Any]:
         """Create a work item and embed it in a LiveDoc as a document part.
 
-        `type` is the Polarion work-item type id. Polarion appends new parts
-        at the end; pass `parent` (a heading part id from list_document_parts)
-        so the work item is nested under that section. `after`/`before` place
-        it among siblings of that parent. Default dry_run=true only returns
-        the work-item and part bodies Polarion would receive.
+        `type` is the Polarion work-item type id. Creating with the document
+        module puts the WI in the Recycle Bin. Pass `previous_part` or
+        `next_part` (a part id from list_document_parts) to insert it in the
+        body at that position. Without those, Polarion appends at the end;
+        `parent`/`after`/`before` then move the appended part. Default
+        dry_run=true only returns the work-item and part bodies Polarion
+        would receive.
         """
         try:
             result = client_factory().create_document_work_item(
@@ -251,6 +255,8 @@ def register_document_tools(mcp: FastMCP, client_factory: ClientFactory) -> None
                 after=after,
                 before=before,
                 parent=parent,
+                previous_part=previous_part,
+                next_part=next_part,
                 dry_run=dry_run,
             )
         except PolarionError as exc:
@@ -408,19 +414,20 @@ def register_document_tools(mcp: FastMCP, client_factory: ClientFactory) -> None
         type: str,
         space_id: str = "_default",
         assign: bool = True,
-        delete_source_text: bool = False,
+        delete_source_text: bool = True,
         user_ids: list[str] | None = None,
         dry_run: bool = True,
     ) -> dict[str, Any]:
-        """Promote imported LiveDoc requirements to a work-item type.
+        """Insert LiveDoc requirement text as work items of `type`.
 
-        After import_document, converts H2 headings under the given H1
-        `sections` to `type`, fills description with Global ID, Project ID, and
-        body text, and round-robin assigns to project users. Source paragraphs
-        stay in the LiveDoc unless `delete_source_text` is true. Skips empty
-        headings and items already of `type`. Word import still needs a
-        filesystem path on the MCP host. Default dry_run=true; set
-        dry_run=false to apply.
+        After import_document, keeps H2 headings as headings. For each
+        promotable block under the given H1 `sections`, creates a work item
+        in the document Recycle Bin, inserts a workitem part after the
+        heading (`previousPart`), fills description with Global ID, Project
+        ID, and body text, and round-robin assigns. Source paragraphs are
+        deleted unless `delete_source_text` is false. Skips empty headings
+        and blocks that already have a marked work item. Default dry_run=true;
+        set dry_run=false to apply.
         """
         try:
             return client_factory().promote_document_requirements(
