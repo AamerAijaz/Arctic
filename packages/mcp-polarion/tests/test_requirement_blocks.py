@@ -26,6 +26,12 @@ def _normal(part_id: str, text: str) -> DocumentPart:
     return DocumentPart(id=part_id, part_type="normal", text=text)
 
 
+def _workitem(part_id: str, work_item_id: str) -> DocumentPart:
+    return DocumentPart(
+        id=part_id, part_type="workitem", work_item_id=work_item_id
+    )
+
+
 def test_functional_physical_wifi_and_brand_marking() -> None:
     parts = [
         _heading("h-func", 1, "Functional"),
@@ -45,6 +51,7 @@ def test_functional_physical_wifi_and_brand_marking() -> None:
     assert wifi.section == "Functional"
     assert wifi.title == "Wi-Fi"
     assert wifi.heading_part_id == "h-wifi"
+    assert wifi.marked_work_item_id is None
     assert wifi.text_part_ids == ["t1", "t2", "t3", "t4"]
     assert wifi.lines == [
         "Global ID: G-001",
@@ -149,6 +156,19 @@ def test_is_promotable_requires_global_id_and_body() -> None:
         description_html="",
     )
     assert is_promotable(full) is True
+
+
+def test_child_workitem_part_is_marked_not_heading() -> None:
+    parts = [
+        _heading("h-func", 1, "Functional"),
+        _heading("h-wifi", 2, "Wi-Fi"),
+        _normal("t1", "Global ID: G-001"),
+        _normal("t2", "The device shall support WPA3."),
+        _workitem("w1", "ELK/WI-99"),
+    ]
+    blocks = parse_requirement_blocks(parts, ["Functional"])
+    assert blocks[0].work_item_id is None
+    assert blocks[0].marked_work_item_id == "ELK/WI-99"
 
 
 def test_last_open_block_flushed_at_end() -> None:

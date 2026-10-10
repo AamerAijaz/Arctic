@@ -482,6 +482,56 @@ def test_create_document_work_item_places_under_parent(env: None) -> None:
     assert any(path.endswith("/actions/move") for path in seen)
 
 
+def test_create_document_work_item_inserts_after_previous_part(env: None) -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = unquote(request.url.path)
+        seen.append(f"{request.method} {path}")
+        if path.endswith("/workitems"):
+            return httpx.Response(
+                201,
+                json={
+                    "data": [
+                        {
+                            "type": "workitems",
+                            "id": "ELK/ELK-9",
+                            "links": {"portal": "https://polarion.example.com/wi/9"},
+                        }
+                    ]
+                },
+            )
+        if path.endswith("/parts"):
+            body = json.loads(request.read().decode())
+            rel = body["data"][0]["relationships"]
+            assert rel["previousPart"]["data"]["id"] == "ELK/_default/Specs/heading_wifi"
+            assert rel["workItem"]["data"]["id"] == "ELK/ELK-9"
+            return httpx.Response(
+                201,
+                json={
+                    "data": [
+                        {
+                            "type": "document_parts",
+                            "id": "ELK/_default/Specs/workitem_ELK-9",
+                        }
+                    ]
+                },
+            )
+        raise AssertionError(f"unexpected path {path}")
+
+    result = _client(handler).create_document_work_item(
+        "ELK",
+        "Specs",
+        "hardware",
+        "Wi-Fi",
+        previous_part="ELK/_default/Specs/heading_wifi",
+        dry_run=False,
+    )
+    assert isinstance(result, CreatedDocumentWorkItem)
+    assert result.part_id == "ELK/_default/Specs/workitem_ELK-9"
+    assert not any("actions/move" in path for path in seen)
+
+
 def test_upload_document_attachment_multipart(env: None) -> None:
     seen: dict[str, object] = {}
 

@@ -728,15 +728,20 @@ class PolarionClient:
         after: str | None = None,
         before: str | None = None,
         parent: str | None = None,
+        previous_part: str | None = None,
+        next_part: str | None = None,
         dry_run: bool = True,
     ) -> CreatedDocumentWorkItem | DocumentWorkItemCreatePreview:
-        """Create a work item linked to a document and add it as a document part.
+        """Create a work item in a LiveDoc (Recycle Bin) and insert a workitem part.
 
-        Polarion always appends a new part at the end of the LiveDoc. Pass
-        `parent` (and optional `after`/`before`) so the part is moved under
-        the matching heading in the same call.
+        POST with `module` creates the WI in the document Recycle Bin. POST the
+        part with `previous_part` or `next_part` to insert it in the body at
+        that position. If those are omitted, Polarion appends at the end; pass
+        `parent`/`after`/`before` only then to move the appended part.
         """
         _assert_project_allowed(project_id)
+        if previous_part and next_part:
+            raise PolarionError("Specify only one of previous_part or next_part.")
         document_id = f"{project_id}/{space_id}/{document_name}"
         work_item_body = _document_work_item_create_body(
             wi_type,
@@ -746,7 +751,12 @@ class PolarionClient:
             status=status,
             severity=severity,
         )
-        part_body = _document_part_work_item_body("")
+        insert_in_place = bool(previous_part or next_part)
+        part_body = _document_part_work_item_body(
+            "",
+            previous_part=previous_part,
+            next_part=next_part,
+        )
         if dry_run:
             return DocumentWorkItemCreatePreview(
                 project_id=project_id,
@@ -755,6 +765,8 @@ class PolarionClient:
                 after=after,
                 before=before,
                 parent=parent,
+                previous_part=previous_part,
+                next_part=next_part,
             )
         encoded_project = quote(project_id, safe="")
         wi_payload = self._request(
@@ -763,14 +775,18 @@ class PolarionClient:
             json=work_item_body,
         )
         created = _parse_created_work_item(wi_payload)
-        part_body = _document_part_work_item_body(created.id)
+        part_body = _document_part_work_item_body(
+            created.id,
+            previous_part=previous_part,
+            next_part=next_part,
+        )
         parts_path = (
             f"{_documents_path(project_id, space_id)}/"
             f"{quote(document_name, safe='')}/parts"
         )
         part_payload = self._request("POST", parts_path, json=part_body)
         part_id = _parse_created_part_id(part_payload)
-        if after or before or parent:
+        if not insert_in_place and (after or before or parent):
             self.move_document_part(
                 project_id,
                 document_name,
@@ -1051,11 +1067,11 @@ class PolarionClient:
         *,
         space_id: str = "_default",
         assign: bool = True,
-        delete_source_text: bool = False,
+        delete_source_text: bool = True,
         user_ids: list[str] | None = None,
         dry_run: bool = True,
     ) -> dict[str, Any]:
-        """Promote parsed requirement blocks: convert type, assign (optional delete)."""
+        """Promote parsed requirement blocks: insert hardware WIs, assign."""
         from polarion_client import promote
 
         _assert_project_allowed(project_id)
@@ -1330,11 +1346,24 @@ def _document_work_item_create_body(
     }
 
 
-def _document_part_work_item_body(work_item_id: str) -> dict[str, Any]:
+def _document_part_work_item_body(
+    work_item_id: str,
+    *,
+    previous_part: str | None = None,
+    next_part: str | None = None,
+) -> dict[str, Any]:
     relationships: dict[str, Any] = {}
     if work_item_id:
         relationships["workItem"] = {
             "data": {"type": "workitems", "id": work_item_id},
+        }
+    if previous_part:
+        relationships["previousPart"] = {
+            "data": {"type": "document_parts", "id": previous_part},
+        }
+    if next_part:
+        relationships["nextPart"] = {
+            "data": {"type": "document_parts", "id": next_part},
         }
     return {
         "data": [

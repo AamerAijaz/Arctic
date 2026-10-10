@@ -12,8 +12,10 @@ from polarion_client.models import (
     AssignedWorkItem,
     ConvertedHeadingWorkItem,
     ConvertHeadingPreview,
+    CreatedDocumentWorkItem,
     Document,
     DocumentPart,
+    DocumentWorkItemCreatePreview,
     ProjectUser,
     WorkItem,
     WorkItemAssignPreview,
@@ -40,16 +42,24 @@ def _normal(part_id: str, text: str) -> DocumentPart:
     return DocumentPart(id=part_id, part_type="normal", text=text)
 
 
+def _workitem(part_id: str, work_item_id: str) -> DocumentPart:
+    return DocumentPart(
+        id=part_id, part_type="workitem", work_item_id=work_item_id
+    )
+
+
 @dataclass
 class FakeClient:
     parts_pages: list[list[DocumentPart]] = field(default_factory=list)
     parts_calls: list[dict[str, Any]] = field(default_factory=list)
     convert_calls: list[dict[str, Any]] = field(default_factory=list)
+    create_calls: list[dict[str, Any]] = field(default_factory=list)
     delete_calls: list[dict[str, Any]] = field(default_factory=list)
     assign_calls: list[dict[str, Any]] = field(default_factory=list)
     project_users: list[ProjectUser] = field(default_factory=list)
     work_items: dict[str, WorkItem] = field(default_factory=dict)
     convert_fail_part_ids: set[str] = field(default_factory=set)
+    create_fail_previous_parts: set[str] = field(default_factory=set)
     portal_url: str | None = "https://polarion.example/doc"
     forbid_mutations: bool = False
 
@@ -112,6 +122,45 @@ class FakeClient:
             id=f"ELK/WI-{part_id}",
             part_id=part_id,
             change_type_to=wi_type,
+        )
+
+    def create_document_work_item(
+        self,
+        project_id: str,
+        document_name: str,
+        wi_type: str,
+        title: str,
+        *,
+        space_id: str = "_default",
+        description: str | None = None,
+        previous_part: str | None = None,
+        dry_run: bool = True,
+        **kwargs: Any,
+    ) -> CreatedDocumentWorkItem | DocumentWorkItemCreatePreview:
+        if self.forbid_mutations and not dry_run:
+            raise AssertionError("mutating create forbidden")
+        self.create_calls.append(
+            {
+                "title": title,
+                "wi_type": wi_type,
+                "description": description,
+                "previous_part": previous_part,
+                "dry_run": dry_run,
+            }
+        )
+        if previous_part in self.create_fail_previous_parts:
+            raise PolarionError(f"create failed for {previous_part}")
+        if dry_run:
+            return DocumentWorkItemCreatePreview(
+                project_id=project_id,
+                work_item_body={},
+                part_body={},
+                previous_part=previous_part,
+            )
+        local = (previous_part or title).replace("/", "-")
+        return CreatedDocumentWorkItem(
+            id=f"ELK/WI-{local}",
+            part_id=f"workitem_{local}",
         )
 
     def delete_document_parts(
@@ -273,10 +322,11 @@ def _promotable_parts() -> list[DocumentPart]:
         _normal("t4", "The device shall support WPA3."),
         _heading("h-brand", 2, "Brand Marking"),
         _normal("t5", "Logo only, no global id."),
-        _heading("h-done", 2, "Already Hardware", work_item_id="ELK/WI-done"),
+        _heading("h-done", 2, "Already Hardware", work_item_id="ELK/WI-heading"),
         _normal("t6", "Global ID: G-2"),
         _normal("t7", ""),
         _normal("t8", "Body for done item."),
+        _workitem("w-done", "ELK/WI-done"),
     ]
 
 
@@ -289,9 +339,6 @@ def test_promote_dry_run_skips_and_plans() -> None:
         ],
         forbid_mutations=True,
     )
-    client.work_items["WI-done"] = WorkItem(
-        id="ELK/WI-done", type="hardware", title="Already Hardware"
-    )
     result = promote_document_requirements(
         client,
         "ELK",
@@ -299,24 +346,28 @@ def test_promote_dry_run_skips_and_plans() -> None:
         ["Functional"],
         "hardware",
         dry_run=True,
+        delete_source_text=False,
     )
     assert result["dry_run"] is True
     assert result["planned_count"] == 1
     reasons = {s["reason"] for s in result["skipped"]}
     assert "not_promotable" in reasons
-    assert "already_converted" in reasons
-    assert all(c["dry_run"] for c in client.convert_calls)
+    assert "already_marked" in reasons
+    assert client.convert_calls == []
+    assert all(c["dry_run"] for c in client.create_calls)
+    assert client.create_calls[0]["previous_part"] == "h-wifi"
+    assert client.create_calls[0]["title"] == "Wi-Fi"
     assert client.delete_calls == []
     assert client.assign_calls == []
     assert result["assigned"]["dry_run"] is True
     assert result["assigned"]["users"] == ["a", "z"]
     assert len(result["assigned"]["assignments"]) == 1
-    assert result["assigned"]["assignments"][0]["work_item_id"] == "WI-h-wifi"
-    assert result["converted"]["results"][0]["part_id"] == "h-wifi"
-    assert "delete_part_ids" not in result["converted"]["results"][0]
+    assert result["assigned"]["assignments"][0]["work_item_id"] == "h-wifi"
+    assert result["inserted"]["results"][0]["heading_part_id"] == "h-wifi"
+    assert "delete_part_ids" not in result["inserted"]["results"][0]
 
 
-def test_promote_apply_converts_then_assigns_converted_only() -> None:
+def test_promote_apply_inserts_then_assigns_created_only() -> None:
     parts = [
         _heading("h-func", 1, "Functional"),
         _heading("h-a", 2, "Req A"),
@@ -335,7 +386,7 @@ def test_promote_apply_converts_then_assigns_converted_only() -> None:
     client = FakeClient(
         parts_pages=[parts],
         project_users=[ProjectUser(id="alice"), ProjectUser(id="bob")],
-        convert_fail_part_ids={"h-b"},
+        create_fail_previous_parts={"h-b"},
     )
     result = promote_document_requirements(
         client,
@@ -344,9 +395,12 @@ def test_promote_apply_converts_then_assigns_converted_only() -> None:
         ["Functional"],
         "hardware",
         dry_run=False,
+        delete_source_text=False,
     )
     assert result["planned_count"] == 3
     assert len(result["errors"]) == 1
+    assert client.convert_calls == []
+    assert [c["previous_part"] for c in client.create_calls] == ["h-a", "h-b", "h-c"]
     assert client.assign_calls == [
         {"work_item_id": "WI-h-a", "user_ids": ["alice"], "dry_run": False},
         {"work_item_id": "WI-h-c", "user_ids": ["bob"], "dry_run": False},
@@ -370,10 +424,10 @@ def test_promote_apply_deletes_source_text_when_requested() -> None:
         ["Functional"],
         "hardware",
         dry_run=False,
-        delete_source_text=True,
         assign=False,
     )
     assert client.delete_calls == [{"part_ids": ["ta1", "ta2", "ta3"], "dry_run": False}]
+    assert client.create_calls[0]["previous_part"] == "h-a"
 
 
 def test_parse_requirement_blocks_via_list_blocks() -> None:
