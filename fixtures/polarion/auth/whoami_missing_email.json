@@ -1,0 +1,36 @@
+{
+  "name": "whoami_missing_email",
+  "description": "Attributes without email parse to email null.",
+  "call": {
+    "operation": "get_current_user",
+    "args": {}
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/polarion/rest/v1/user",
+        "query": {}
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": {
+            "type": "users",
+            "id": "bob",
+            "attributes": {
+              "name": "Bob"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "result": {
+      "id": "bob",
+      "name": "Bob",
+      "email": null
+    }
+  }
+}

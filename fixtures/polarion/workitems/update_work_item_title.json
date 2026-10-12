@@ -1,0 +1,39 @@
+{
+  "name": "update_work_item_title",
+  "description": "PATCH with only the given attributes; data is an object with id '{project}/{id}'. 204 returns {id}.",
+  "call": {
+    "operation": "update_work_item",
+    "args": {
+      "project_id": "ELK",
+      "work_item_id": "ELK-42",
+      "title": "Renamed",
+      "dry_run": false
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PATCH",
+        "path": "/polarion/rest/v1/projects/ELK/workitems/ELK-42",
+        "query": {},
+        "body": {
+          "data": {
+            "type": "workitems",
+            "id": "ELK/ELK-42",
+            "attributes": {
+              "title": "Renamed"
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 204
+      }
+    }
+  ],
+  "expect": {
+    "result": {
+      "id": "ELK/ELK-42"
+    }
+  }
+}

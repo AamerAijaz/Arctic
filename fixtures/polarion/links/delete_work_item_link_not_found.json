@@ -1,0 +1,41 @@
+{
+  "name": "delete_work_item_link_not_found",
+  "description": "404 is rewritten to 'Link not found: {composite link id}'.",
+  "call": {
+    "operation": "delete_work_item_link",
+    "args": {
+      "project_id": "ELK",
+      "work_item_id": "ELK-42",
+      "target_work_item_id": "ELK-99",
+      "role": "implements",
+      "dry_run": false
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/polarion/rest/v1/projects/ELK/workitems/ELK-42/linkedworkitems/implements/ELK/ELK-99",
+        "query": {}
+      },
+      "response": {
+        "status": 404,
+        "body": {
+          "errors": [
+            {
+              "status": "404",
+              "title": "Not Found"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "error": {
+      "type": "PolarionApiError",
+      "status": 404,
+      "message_contains": "Link not found: ELK/ELK-42/implements/ELK/ELK-99"
+    }
+  }
+}

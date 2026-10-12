@@ -1,0 +1,156 @@
+{
+  "name": "list_project_users_role_edge_cases",
+  "description": "Non-matching cases are dropped: other project, project-id prefix collision, role-name prefix, and missing relationships. Order of matches is preserved.",
+  "call": {
+    "operation": "list_project_users",
+    "args": {
+      "project_id": "ELK",
+      "role": "project_admin"
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/polarion/rest/v1/users",
+        "query": {
+          "fields[users]": "id,name,email,projectRoles",
+          "include": "projectRoles",
+          "page[size]": "100",
+          "page[number]": "1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "type": "users",
+              "id": "bob",
+              "attributes": {
+                "name": "Bob",
+                "email": "b@example.com"
+              },
+              "relationships": {
+                "projectRoles": {
+                  "data": [
+                    {
+                      "type": "projectroles",
+                      "id": "ELK/project_assignable"
+                    },
+                    {
+                      "type": "projectroles",
+                      "id": "ELK/project_admin"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "users",
+              "id": "dave",
+              "attributes": {
+                "name": "Dave"
+              },
+              "relationships": {
+                "projectRoles": {
+                  "data": [
+                    {
+                      "type": "projectroles",
+                      "id": "OTHER/project_admin"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "users",
+              "id": "erin",
+              "attributes": {
+                "name": "Erin"
+              },
+              "relationships": {
+                "projectRoles": {
+                  "data": [
+                    {
+                      "type": "projectroles",
+                      "id": "ELKX/project_admin"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "users",
+              "id": "frank",
+              "attributes": {
+                "name": "Frank"
+              },
+              "relationships": {
+                "projectRoles": {
+                  "data": [
+                    {
+                      "type": "projectroles",
+                      "id": "ELK/project_admin_extra"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "users",
+              "id": "gina",
+              "attributes": {
+                "name": "Gina"
+              }
+            },
+            {
+              "type": "users",
+              "id": "hank",
+              "attributes": {
+                "name": "Hank"
+              },
+              "relationships": {
+                "projectRoles": {
+                  "data": []
+                }
+              }
+            },
+            {
+              "type": "users",
+              "id": "ivy",
+              "attributes": {
+                "name": "Ivy",
+                "email": "ivy@example.com"
+              },
+              "relationships": {
+                "projectRoles": {
+                  "data": [
+                    {
+                      "type": "projectroles",
+                      "id": "ELK/team/project_admin"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "result": [
+      {
+        "id": "bob",
+        "name": "Bob",
+        "email": "b@example.com"
+      },
+      {
+        "id": "ivy",
+        "name": "Ivy",
+        "email": "ivy@example.com"
+      }
+    ]
+  }
+}

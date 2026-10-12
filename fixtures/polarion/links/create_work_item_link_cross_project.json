@@ -1,0 +1,58 @@
+{
+  "name": "create_work_item_link_cross_project",
+  "description": "target_project_id changes the target id in the body; the POST still goes to the source item.",
+  "call": {
+    "operation": "create_work_item_link",
+    "args": {
+      "project_id": "ELK",
+      "work_item_id": "ELK-42",
+      "target_work_item_id": "OTHER-7",
+      "role": "relates_to",
+      "target_project_id": "OTHER",
+      "dry_run": false
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/polarion/rest/v1/projects/ELK/workitems/ELK-42/linkedworkitems",
+        "query": {},
+        "body": {
+          "data": [
+            {
+              "type": "linkedworkitems",
+              "attributes": {
+                "role": "relates_to"
+              },
+              "relationships": {
+                "workItem": {
+                  "data": {
+                    "type": "workitems",
+                    "id": "OTHER/OTHER-7"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "data": [
+            {
+              "type": "linkedworkitems",
+              "id": "ELK/ELK-42/relates_to/OTHER/OTHER-7"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "result": {
+      "id": "ELK/ELK-42/relates_to/OTHER/OTHER-7"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "list_project_users_blocked_by_allowlist",
+  "description": "A project outside POLARION_PROJECT_ALLOWLIST fails with 403 before any HTTP call.",
+  "call": {
+    "operation": "list_project_users",
+    "args": {
+      "project_id": "OTHER"
+    }
+  },
+  "env": {
+    "POLARION_PROJECT_ALLOWLIST": "ELK"
+  },
+  "exchanges": [],
+  "expect": {
+    "error": {
+      "type": "PolarionApiError",
+      "status": 403,
+      "message_contains": "POLARION_PROJECT_ALLOWLIST"
+    }
+  }
+}

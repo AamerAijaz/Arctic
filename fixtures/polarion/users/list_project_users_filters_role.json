@@ -1,0 +1,76 @@
+{
+  "name": "list_project_users_filters_role",
+  "description": "GET /users (global, not per project) and keep users having role '{project}/{role}'; default role is project_assignable.",
+  "call": {
+    "operation": "list_project_users",
+    "args": {
+      "project_id": "ELK"
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/polarion/rest/v1/users",
+        "query": {
+          "fields[users]": "id,name,email,projectRoles",
+          "include": "projectRoles",
+          "page[size]": "100",
+          "page[number]": "1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "type": "users",
+              "id": "alice",
+              "attributes": {
+                "name": "Alice",
+                "email": "a@example.com"
+              },
+              "relationships": {
+                "projectRoles": {
+                  "data": [
+                    {
+                      "type": "projectroles",
+                      "id": "ELK/project_assignable"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "users",
+              "id": "bob",
+              "attributes": {
+                "name": "Bob",
+                "email": "b@example.com"
+              },
+              "relationships": {
+                "projectRoles": {
+                  "data": [
+                    {
+                      "type": "projectroles",
+                      "id": "ELK/project_admin"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "result": [
+      {
+        "id": "alice",
+        "name": "Alice",
+        "email": "a@example.com"
+      }
+    ]
+  }
+}

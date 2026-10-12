@@ -1,0 +1,43 @@
+{
+  "name": "assign_work_item_dry_run",
+  "description": "dry_run defaults to true: no HTTP call, the would-be body is returned.",
+  "call": {
+    "operation": "assign_work_item",
+    "args": {
+      "project_id": "ELK",
+      "work_item_id": "ELK-1",
+      "user_ids": [
+        "alice",
+        "bob"
+      ]
+    }
+  },
+  "exchanges": [],
+  "expect": {
+    "result": {
+      "dry_run": true,
+      "project_id": "ELK",
+      "work_item_id": "ELK-1",
+      "body": {
+        "data": {
+          "type": "workitems",
+          "id": "ELK/ELK-1",
+          "relationships": {
+            "assignee": {
+              "data": [
+                {
+                  "type": "users",
+                  "id": "alice"
+                },
+                {
+                  "type": "users",
+                  "id": "bob"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

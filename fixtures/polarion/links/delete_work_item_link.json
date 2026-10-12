@@ -1,0 +1,31 @@
+{
+  "name": "delete_work_item_link",
+  "description": "DELETE linkedworkitems/{role}/{targetProject}/{targetId} with no body; 204 returns the composite link id.",
+  "call": {
+    "operation": "delete_work_item_link",
+    "args": {
+      "project_id": "ELK",
+      "work_item_id": "ELK-42",
+      "target_work_item_id": "ELK-12",
+      "role": "implements",
+      "dry_run": false
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "DELETE",
+        "path": "/polarion/rest/v1/projects/ELK/workitems/ELK-42/linkedworkitems/implements/ELK/ELK-12",
+        "query": {}
+      },
+      "response": {
+        "status": 204
+      }
+    }
+  ],
+  "expect": {
+    "result": {
+      "id": "ELK/ELK-42/implements/ELK/ELK-12"
+    }
+  }
+}

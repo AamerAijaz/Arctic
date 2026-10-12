@@ -1,0 +1,19 @@
+{
+  "name": "update_work_item_requires_fields",
+  "description": "No title/description/status/change_type_to raises a plain PolarionError before any HTTP call.",
+  "call": {
+    "operation": "update_work_item",
+    "args": {
+      "project_id": "ELK",
+      "work_item_id": "ELK-42",
+      "dry_run": false
+    }
+  },
+  "exchanges": [],
+  "expect": {
+    "error": {
+      "type": "PolarionError",
+      "message_contains": "at least one"
+    }
+  }
+}

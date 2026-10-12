@@ -1,0 +1,51 @@
+{
+  "name": "create_work_item_bad_type_redacts_token",
+  "description": "400 detail is surfaced with bearer tokens redacted.",
+  "call": {
+    "operation": "create_work_item",
+    "args": {
+      "project_id": "ELK",
+      "wi_type": "nope",
+      "title": "Title",
+      "dry_run": false
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/polarion/rest/v1/projects/ELK/workitems",
+        "query": {},
+        "body": {
+          "data": [
+            {
+              "type": "workitems",
+              "attributes": {
+                "type": "nope",
+                "title": "Title"
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 400,
+        "body": {
+          "errors": [
+            {
+              "detail": "Unknown type Bearer test-token"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "error": {
+      "type": "PolarionApiError",
+      "status": 400,
+      "message_contains": "Unknown type Bearer [redacted]",
+      "message_excludes": "test-token"
+    }
+  }
+}

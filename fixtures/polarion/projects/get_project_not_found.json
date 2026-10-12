@@ -1,0 +1,39 @@
+{
+  "name": "get_project_not_found",
+  "description": "404 is rewritten to a friendly 'Project not found' detail.",
+  "call": {
+    "operation": "get_project",
+    "args": {
+      "project_id": "missing"
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/polarion/rest/v1/projects/missing",
+        "query": {
+          "fields[projects]": "id,name,description,active,trackerPrefix"
+        }
+      },
+      "response": {
+        "status": 404,
+        "body": {
+          "errors": [
+            {
+              "status": "404",
+              "title": "Not Found"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "error": {
+      "type": "PolarionApiError",
+      "status": 404,
+      "message_contains": "Project not found: missing"
+    }
+  }
+}

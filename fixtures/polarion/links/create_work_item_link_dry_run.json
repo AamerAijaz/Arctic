@@ -1,0 +1,39 @@
+{
+  "name": "create_work_item_link_dry_run",
+  "description": "dry_run defaults to true: no HTTP call, the would-be body is returned.",
+  "call": {
+    "operation": "create_work_item_link",
+    "args": {
+      "project_id": "ELK",
+      "work_item_id": "ELK-42",
+      "target_work_item_id": "ELK-12",
+      "role": "implements"
+    }
+  },
+  "exchanges": [],
+  "expect": {
+    "result": {
+      "dry_run": true,
+      "project_id": "ELK",
+      "work_item_id": "ELK-42",
+      "body": {
+        "data": [
+          {
+            "type": "linkedworkitems",
+            "attributes": {
+              "role": "implements"
+            },
+            "relationships": {
+              "workItem": {
+                "data": {
+                  "type": "workitems",
+                  "id": "ELK/ELK-12"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

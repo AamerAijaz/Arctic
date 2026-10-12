@@ -1,0 +1,26 @@
+{
+  "name": "create_work_item_link_target_allowlist",
+  "description": "The target project is also checked against POLARION_PROJECT_ALLOWLIST before any HTTP call.",
+  "call": {
+    "operation": "create_work_item_link",
+    "args": {
+      "project_id": "ELK",
+      "work_item_id": "ELK-42",
+      "target_work_item_id": "OTHER-1",
+      "role": "relates_to",
+      "target_project_id": "OTHER",
+      "dry_run": false
+    }
+  },
+  "env": {
+    "POLARION_PROJECT_ALLOWLIST": "ELK"
+  },
+  "exchanges": [],
+  "expect": {
+    "error": {
+      "type": "PolarionApiError",
+      "status": 403,
+      "message_contains": "POLARION_PROJECT_ALLOWLIST"
+    }
+  }
+}

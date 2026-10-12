@@ -1,9 +1,18 @@
 {
   "mcpServers": {
-    "mcp-polarion": {
+    "arctic": {
       "type": "stdio",
-      "command": "uv",
-      "args": ["run", "--directory", ".", "mcp-polarion"]
+      "command": "server/bin/arctic-mcp.cmd",
+      "args": [
+        "-jar",
+        "server/local-app/build/libs/local-app-0.1.0-SNAPSHOT.jar",
+        "stdio"
+      ],
+      "env": {
+        "ARCTIC_DEV": "1",
+        "POLARION_URL": "https://your-polarion-host.example.com",
+        "POLARION_TOKEN": "replace-with-your-pat"
+      }
     }
   }
 }

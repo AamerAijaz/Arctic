@@ -1,0 +1,49 @@
+{
+  "name": "update_work_item_not_found",
+  "description": "404 is rewritten to 'Work item not found: {project}/{id}'.",
+  "call": {
+    "operation": "update_work_item",
+    "args": {
+      "project_id": "ELK",
+      "work_item_id": "ELK-99",
+      "title": "Nope",
+      "dry_run": false
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PATCH",
+        "path": "/polarion/rest/v1/projects/ELK/workitems/ELK-99",
+        "query": {},
+        "body": {
+          "data": {
+            "type": "workitems",
+            "id": "ELK/ELK-99",
+            "attributes": {
+              "title": "Nope"
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 404,
+        "body": {
+          "errors": [
+            {
+              "status": "404",
+              "title": "Not Found"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "error": {
+      "type": "PolarionApiError",
+      "status": 404,
+      "message_contains": "Work item not found: ELK/ELK-99"
+    }
+  }
+}

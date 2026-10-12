@@ -1,0 +1,58 @@
+{
+  "name": "list_project_users_role_suffix_match",
+  "description": "A role id that starts with '{project}/' and whose last '/' segment equals the role also matches.",
+  "call": {
+    "operation": "list_project_users",
+    "args": {
+      "project_id": "ELK",
+      "role": "project_assignable"
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/polarion/rest/v1/users",
+        "query": {
+          "fields[users]": "id,name,email,projectRoles",
+          "include": "projectRoles",
+          "page[size]": "100",
+          "page[number]": "1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "type": "users",
+              "id": "carol",
+              "attributes": {
+                "name": "Carol"
+              },
+              "relationships": {
+                "projectRoles": {
+                  "data": [
+                    {
+                      "type": "projectroles",
+                      "id": "ELK/custom/project_assignable"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "result": [
+      {
+        "id": "carol",
+        "name": "Carol",
+        "email": null
+      }
+    ]
+  }
+}

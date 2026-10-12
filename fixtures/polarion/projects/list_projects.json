@@ -1,0 +1,52 @@
+{
+  "name": "list_projects",
+  "description": "GET /projects with sparse fields and default paging; text attributes may be {type,value} objects.",
+  "call": {
+    "operation": "list_projects",
+    "args": {}
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/polarion/rest/v1/projects",
+        "query": {
+          "fields[projects]": "id,name,description,active,trackerPrefix",
+          "page[size]": "100",
+          "page[number]": "1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "type": "projects",
+              "id": "ELK",
+              "attributes": {
+                "name": "Elk",
+                "description": {
+                  "type": "text/plain",
+                  "value": "Demo"
+                },
+                "active": true,
+                "trackerPrefix": "ELK"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "result": [
+      {
+        "id": "ELK",
+        "name": "Elk",
+        "description": "Demo",
+        "active": true,
+        "tracker_prefix": "ELK"
+      }
+    ]
+  }
+}

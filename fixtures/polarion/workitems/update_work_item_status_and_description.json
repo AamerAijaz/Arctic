@@ -1,0 +1,44 @@
+{
+  "name": "update_work_item_status_and_description",
+  "description": "Status is a plain string; description is wrapped as text/html.",
+  "call": {
+    "operation": "update_work_item",
+    "args": {
+      "project_id": "ELK",
+      "work_item_id": "ELK-42",
+      "description": "<p>Updated</p>",
+      "status": "in_progress",
+      "dry_run": false
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PATCH",
+        "path": "/polarion/rest/v1/projects/ELK/workitems/ELK-42",
+        "query": {},
+        "body": {
+          "data": {
+            "type": "workitems",
+            "id": "ELK/ELK-42",
+            "attributes": {
+              "description": {
+                "type": "text/html",
+                "value": "<p>Updated</p>"
+              },
+              "status": "in_progress"
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 204
+      }
+    }
+  ],
+  "expect": {
+    "result": {
+      "id": "ELK/ELK-42"
+    }
+  }
+}

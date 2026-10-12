@@ -1,0 +1,66 @@
+{
+  "name": "list_work_item_backlinks",
+  "description": "GET backlinkedworkitems with the same query; workItem relationship points at the linking item.",
+  "call": {
+    "operation": "list_work_item_backlinks",
+    "args": {
+      "project_id": "ELK",
+      "work_item_id": "ELK-12"
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/polarion/rest/v1/projects/ELK/workitems/ELK-12/backlinkedworkitems",
+        "query": {
+          "fields[linkedworkitems]": "role",
+          "fields[workitems]": "id,title,type,status",
+          "include": "workItem"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "type": "linkedworkitems",
+              "id": "ELK/ELK-42/implements/ELK/ELK-12",
+              "attributes": {
+                "role": "implements"
+              },
+              "relationships": {
+                "workItem": {
+                  "data": {
+                    "type": "workitems",
+                    "id": "ELK/ELK-42"
+                  }
+                }
+              }
+            }
+          ],
+          "included": [
+            {
+              "type": "workitems",
+              "id": "ELK/ELK-42",
+              "attributes": {
+                "title": "Fix login",
+                "type": "task"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "result": [
+      {
+        "id": "ELK/ELK-42/implements/ELK/ELK-12",
+        "role": "implements",
+        "target_id": "ELK/ELK-42",
+        "target_title": "Fix login"
+      }
+    ]
+  }
+}

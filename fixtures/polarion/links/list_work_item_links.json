@@ -1,0 +1,88 @@
+{
+  "name": "list_work_item_links",
+  "description": "GET linkedworkitems with include=workItem; target_title comes from the matching 'included' work item.",
+  "call": {
+    "operation": "list_work_item_links",
+    "args": {
+      "project_id": "ELK",
+      "work_item_id": "ELK-42"
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/polarion/rest/v1/projects/ELK/workitems/ELK-42/linkedworkitems",
+        "query": {
+          "fields[linkedworkitems]": "role",
+          "fields[workitems]": "id,title,type,status",
+          "include": "workItem"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "type": "linkedworkitems",
+              "id": "ELK/ELK-42/implements/ELK/ELK-12",
+              "attributes": {
+                "role": "implements"
+              },
+              "relationships": {
+                "workItem": {
+                  "data": {
+                    "type": "workitems",
+                    "id": "ELK/ELK-12"
+                  }
+                }
+              }
+            },
+            {
+              "type": "linkedworkitems",
+              "id": "ELK/ELK-42/relates_to/OTHER/OTHER-7",
+              "attributes": {
+                "role": "relates_to"
+              },
+              "relationships": {
+                "workItem": {
+                  "data": {
+                    "type": "workitems",
+                    "id": "OTHER/OTHER-7"
+                  }
+                }
+              }
+            }
+          ],
+          "included": [
+            {
+              "type": "workitems",
+              "id": "ELK/ELK-12",
+              "attributes": {
+                "title": "Login must SSO",
+                "type": "requirement",
+                "status": "draft"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "result": [
+      {
+        "id": "ELK/ELK-42/implements/ELK/ELK-12",
+        "role": "implements",
+        "target_id": "ELK/ELK-12",
+        "target_title": "Login must SSO"
+      },
+      {
+        "id": "ELK/ELK-42/relates_to/OTHER/OTHER-7",
+        "role": "relates_to",
+        "target_id": "OTHER/OTHER-7",
+        "target_title": null
+      }
+    ]
+  }
+}

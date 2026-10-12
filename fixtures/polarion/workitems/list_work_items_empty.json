@@ -1,0 +1,32 @@
+{
+  "name": "list_work_items_empty",
+  "description": "No query parameter is sent when query is omitted; an empty data list returns an empty result.",
+  "call": {
+    "operation": "list_work_items",
+    "args": {
+      "project_id": "ELK"
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/polarion/rest/v1/projects/ELK/workitems",
+        "query": {
+          "fields[workitems]": "id,title,type,status",
+          "page[size]": "100",
+          "page[number]": "1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "result": []
+  }
+}

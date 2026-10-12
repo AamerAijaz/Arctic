@@ -1,0 +1,51 @@
+{
+  "name": "list_projects_query_and_paging",
+  "description": "Optional query and explicit paging are passed through as query parameters; missing attributes parse to null.",
+  "call": {
+    "operation": "list_projects",
+    "args": {
+      "query": "name:Elk",
+      "page_size": 10,
+      "page_number": 2
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/polarion/rest/v1/projects",
+        "query": {
+          "fields[projects]": "id,name,description,active,trackerPrefix",
+          "page[size]": "10",
+          "page[number]": "2",
+          "query": "name:Elk"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "type": "projects",
+              "id": "ELK",
+              "attributes": {
+                "name": "Elk"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "result": [
+      {
+        "id": "ELK",
+        "name": "Elk",
+        "description": null,
+        "active": null,
+        "tracker_prefix": null
+      }
+    ]
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "name": "create_work_item_type_dry_run",
+  "description": "dry_run defaults to true: the GET still happens, the PATCH does not; the preview holds the PATCH body.",
+  "call": {
+    "operation": "create_work_item_type",
+    "args": {
+      "project_id": "ELK",
+      "type_id": "ux",
+      "name": "UX",
+      "description": "User experience requirement."
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/polarion/rest/v1/projects/ELK/enumerations/~/workitem-type/~",
+        "query": {
+          "fields[enumerations]": "@all"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": {
+            "type": "enumerations",
+            "id": "ELK/~/workitem-type/~",
+            "attributes": {
+              "enumName": "workitem-type",
+              "options": [
+                {
+                  "id": "hardware",
+                  "name": "hw",
+                  "color": "#111111",
+                  "iconURL": "/polarion/icons/default/enums/type_hardware.gif"
+                },
+                {
+                  "id": "softwarerequirement",
+                  "name": "Software Requirement",
+                  "color": "#222222",
+                  "iconURL": "/polarion/icons/default/enums/type_software.gif"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "result": {
+      "dry_run": true,
+      "project_id": "ELK",
+      "already_exists": false,
+      "body": {
+        "data": {
+          "type": "enumerations",
+          "id": "ELK/~/workitem-type/~",
+          "attributes": {
+            "options": [
+              {
+                "id": "hardware",
+                "name": "hw",
+                "color": "#111111",
+                "iconURL": "/polarion/icons/default/enums/type_hardware.gif"
+              },
+              {
+                "id": "softwarerequirement",
+                "name": "Software Requirement",
+                "color": "#222222",
+                "iconURL": "/polarion/icons/default/enums/type_software.gif"
+              },
+              {
+                "id": "ux",
+                "name": "UX",
+                "description": "User experience requirement.",
+                "color": "#222222",
+                "iconURL": "/polarion/icons/default/enums/type_software.gif"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

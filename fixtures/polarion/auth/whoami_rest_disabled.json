@@ -1,0 +1,33 @@
+{
+  "name": "whoami_rest_disabled",
+  "description": "503 maps to PolarionUnavailableError (REST API not enabled), regardless of body.",
+  "call": {
+    "operation": "get_current_user",
+    "args": {}
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/polarion/rest/v1/user",
+        "query": {}
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "errors": [
+            {
+              "title": "Service Unavailable"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "error": {
+      "type": "PolarionUnavailableError",
+      "message_contains": "not enabled"
+    }
+  }
+}

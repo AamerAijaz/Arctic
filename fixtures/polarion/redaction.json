@@ -1,0 +1,71 @@
+{
+  "description": "Cases for redact(text, token): bearer values are replaced first, then every literal occurrence of the token (if non-empty).",
+  "cases": [
+    {
+      "name": "bearer header redacted",
+      "text": "Authorization: Bearer abc.def-123",
+      "token": null,
+      "expected": "Authorization: Bearer [redacted]"
+    },
+    {
+      "name": "bearer match is case-insensitive and normalizes case",
+      "text": "authorization: bearer abc",
+      "token": null,
+      "expected": "authorization: Bearer [redacted]"
+    },
+    {
+      "name": "any whitespace after Bearer",
+      "text": "Bearer\tabc",
+      "token": null,
+      "expected": "Bearer [redacted]"
+    },
+    {
+      "name": "token consumes up to next whitespace",
+      "text": "Bearer abc,def ok",
+      "token": null,
+      "expected": "Bearer [redacted] ok"
+    },
+    {
+      "name": "every bearer occurrence redacted",
+      "text": "Bearer one and Bearer two",
+      "token": null,
+      "expected": "Bearer [redacted] and Bearer [redacted]"
+    },
+    {
+      "name": "no word boundary before Bearer",
+      "text": "xBearer abc",
+      "token": null,
+      "expected": "xBearer [redacted]"
+    },
+    {
+      "name": "bare Bearer without value unchanged",
+      "text": "Bearer",
+      "token": null,
+      "expected": "Bearer"
+    },
+    {
+      "name": "raw token redacted when given",
+      "text": "token test-token leaked",
+      "token": "test-token",
+      "expected": "token [redacted] leaked"
+    },
+    {
+      "name": "bearer and raw token both redacted",
+      "text": "Bearer test-token then test-token",
+      "token": "test-token",
+      "expected": "Bearer [redacted] then [redacted]"
+    },
+    {
+      "name": "empty token ignored",
+      "text": "nothing secret here",
+      "token": "",
+      "expected": "nothing secret here"
+    },
+    {
+      "name": "no token, no bearer unchanged",
+      "text": "plain text",
+      "token": null,
+      "expected": "plain text"
+    }
+  ]
+}

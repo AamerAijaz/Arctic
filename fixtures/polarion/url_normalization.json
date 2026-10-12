@@ -1,0 +1,103 @@
+{
+  "description": "Cases for normalize_rest_root(url): turn a user-supplied POLARION_URL into the REST root. Each case has either 'expected' (the returned REST root) or 'error' (the raised error type).",
+  "cases": [
+    {
+      "name": "bare host",
+      "input": "https://polarion.example.com",
+      "expected": "https://polarion.example.com/polarion/rest/v1"
+    },
+    {
+      "name": "bare host with trailing slash",
+      "input": "https://polarion.example.com/",
+      "expected": "https://polarion.example.com/polarion/rest/v1"
+    },
+    {
+      "name": "polarion context",
+      "input": "https://polarion.example.com/polarion",
+      "expected": "https://polarion.example.com/polarion/rest/v1"
+    },
+    {
+      "name": "polarion context with trailing slash",
+      "input": "https://polarion.example.com/polarion/",
+      "expected": "https://polarion.example.com/polarion/rest/v1"
+    },
+    {
+      "name": "full rest root",
+      "input": "https://polarion.example.com/polarion/rest/v1",
+      "expected": "https://polarion.example.com/polarion/rest/v1"
+    },
+    {
+      "name": "full rest root with trailing slashes",
+      "input": "https://polarion.example.com/polarion/rest/v1//",
+      "expected": "https://polarion.example.com/polarion/rest/v1"
+    },
+    {
+      "name": "custom context with rest/v1 kept as-is",
+      "input": "https://polarion.example.com/alm/rest/v1",
+      "expected": "https://polarion.example.com/alm/rest/v1"
+    },
+    {
+      "name": "prefix path before polarion",
+      "input": "https://example.com/tools/polarion",
+      "expected": "https://example.com/tools/polarion/rest/v1"
+    },
+    {
+      "name": "other path gets /polarion/rest/v1 appended",
+      "input": "https://example.com/alm",
+      "expected": "https://example.com/alm/polarion/rest/v1"
+    },
+    {
+      "name": "path match is case-sensitive",
+      "input": "https://example.com/Polarion",
+      "expected": "https://example.com/Polarion/polarion/rest/v1"
+    },
+    {
+      "name": "http and port preserved",
+      "input": "http://localhost:8080/polarion",
+      "expected": "http://localhost:8080/polarion/rest/v1"
+    },
+    {
+      "name": "surrounding whitespace trimmed",
+      "input": "  https://polarion.example.com/polarion  ",
+      "expected": "https://polarion.example.com/polarion/rest/v1"
+    },
+    {
+      "name": "query and fragment dropped",
+      "input": "https://polarion.example.com/polarion/?a=1#frag",
+      "expected": "https://polarion.example.com/polarion/rest/v1"
+    },
+    {
+      "name": "scheme lowercased, host case kept",
+      "input": "HTTPS://Polarion.Example.com",
+      "expected": "https://Polarion.Example.com/polarion/rest/v1"
+    },
+    {
+      "name": "empty string",
+      "input": "",
+      "error": {
+        "type": "MissingCredentialsError"
+      }
+    },
+    {
+      "name": "no scheme",
+      "input": "polarion.example.com/polarion",
+      "error": {
+        "type": "MissingCredentialsError"
+      }
+    },
+    {
+      "name": "unsupported scheme",
+      "input": "ftp://polarion.example.com/polarion",
+      "error": {
+        "type": "MissingCredentialsError"
+      }
+    },
+    {
+      "name": "scheme without host",
+      "input": "https:///polarion",
+      "error": {
+        "type": "MissingCredentialsError"
+      }
+    }
+  ]
+}

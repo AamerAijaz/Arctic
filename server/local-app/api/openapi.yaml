@@ -1,0 +1,166 @@
+openapi: 3.1.0
+info:
+  title: Arctic local API
+  version: 0.1.0
+  description: >
+    Served by `arctic-mcp serve` on 127.0.0.1 for the desktop app only.
+    Every request requires `Authorization: Bearer <ARCTIC_SERVE_TOKEN>`.
+    Secrets are write-only: no response ever contains a Polarion token or model key.
+servers:
+  - url: http://127.0.0.1:{port}
+    variables:
+      port:
+        default: "47100"
+security:
+  - bearer: []
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      responses:
+        "200":
+          description: Server is ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /setup/status:
+    get:
+      operationId: getSetupStatus
+      responses:
+        "200":
+          description: Current configuration and the latest Polarion probe.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetupStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /setup/polarion:
+    put:
+      operationId: putPolarion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PolarionSettings"
+      responses:
+        "200":
+          description: Stored, then probed. The probe may still report a failure.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolarionProbe"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /setup/model:
+    put:
+      operationId: putModel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelSettings"
+      responses:
+        "204":
+          description: Stored.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  responses:
+    Unauthorized:
+      description: Missing or wrong bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BadRequest:
+      description: Invalid input.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Health:
+      type: object
+      required: [status, version]
+      properties:
+        status:
+          type: string
+          enum: [ready]
+        version:
+          type: string
+    PolarionSettings:
+      type: object
+      required: [url, token]
+      properties:
+        url:
+          type: string
+          description: Server origin or any URL under /polarion. Normalized to the REST root.
+        token:
+          type: string
+          writeOnly: true
+    PolarionProbe:
+      type: object
+      required: [result]
+      properties:
+        result:
+          type: string
+          enum: [ok, not_configured, rejected_token, rest_disabled, network_error]
+        userId:
+          type: string
+          description: Present when result is ok.
+        userName:
+          type: string
+        message:
+          type: string
+          description: Human-readable detail for failures. Never contains the token.
+    ModelSettings:
+      type: object
+      required: [baseUrl, model, apiKey]
+      properties:
+        baseUrl:
+          type: string
+          examples: ["https://openrouter.ai/api/v1"]
+        model:
+          type: string
+          examples: ["anthropic/claude-sonnet-4.5"]
+        apiKey:
+          type: string
+          writeOnly: true
+    SetupStatus:
+      type: object
+      required: [polarionConfigured, polarion, modelConfigured]
+      properties:
+        polarionConfigured:
+          type: boolean
+        polarionUrl:
+          type: string
+        polarion:
+          $ref: "#/components/schemas/PolarionProbe"
+        modelConfigured:
+          type: boolean
+        modelBaseUrl:
+          type: string
+        model:
+          type: string
+    Error:
+      type: object
+      required: [kind, message]
+      properties:
+        kind:
+          type: string
+        message:
+          type: string

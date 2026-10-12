@@ -1,0 +1,36 @@
+{
+  "name": "whoami_unauthorized",
+  "description": "401 maps to PolarionAuthError with a fixed message; the server's error detail (here the token) is never surfaced.",
+  "call": {
+    "operation": "get_current_user",
+    "args": {}
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/polarion/rest/v1/user",
+        "query": {}
+      },
+      "response": {
+        "status": 401,
+        "body": {
+          "errors": [
+            {
+              "status": "401",
+              "title": "Unauthorized",
+              "detail": "test-token"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "error": {
+      "type": "PolarionAuthError",
+      "message_contains": "rejected the token",
+      "message_excludes": "test-token"
+    }
+  }
+}

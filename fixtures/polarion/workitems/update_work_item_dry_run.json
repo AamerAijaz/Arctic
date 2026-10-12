@@ -1,0 +1,36 @@
+{
+  "name": "update_work_item_dry_run",
+  "description": "dry_run defaults to true: no HTTP call; the preview omits change_type_to when not given.",
+  "call": {
+    "operation": "update_work_item",
+    "args": {
+      "project_id": "ELK",
+      "work_item_id": "ELK-42",
+      "title": "Fix login again",
+      "description": "<p>Updated</p>",
+      "status": "in_progress"
+    }
+  },
+  "exchanges": [],
+  "expect": {
+    "result": {
+      "dry_run": true,
+      "project_id": "ELK",
+      "work_item_id": "ELK-42",
+      "body": {
+        "data": {
+          "type": "workitems",
+          "id": "ELK/ELK-42",
+          "attributes": {
+            "title": "Fix login again",
+            "description": {
+              "type": "text/html",
+              "value": "<p>Updated</p>"
+            },
+            "status": "in_progress"
+          }
+        }
+      }
+    }
+  }
+}

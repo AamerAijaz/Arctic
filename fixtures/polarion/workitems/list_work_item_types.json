@@ -1,0 +1,58 @@
+{
+  "name": "list_work_item_types",
+  "description": "GET the project workitem-type enumeration; options without description parse to null.",
+  "call": {
+    "operation": "list_work_item_types",
+    "args": {
+      "project_id": "ELK"
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/polarion/rest/v1/projects/ELK/enumerations/~/workitem-type/~",
+        "query": {
+          "fields[enumerations]": "@all"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": {
+            "type": "enumerations",
+            "id": "ELK/~/workitem-type/~",
+            "attributes": {
+              "enumName": "workitem-type",
+              "options": [
+                {
+                  "id": "userneed",
+                  "name": "User Need",
+                  "description": "A documented user need."
+                },
+                {
+                  "id": "hardware",
+                  "name": "Hardware"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "result": [
+      {
+        "id": "userneed",
+        "name": "User Need",
+        "description": "A documented user need."
+      },
+      {
+        "id": "hardware",
+        "name": "Hardware",
+        "description": null
+      }
+    ]
+  }
+}

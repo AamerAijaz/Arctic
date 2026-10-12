@@ -1,0 +1,25 @@
+{
+  "name": "delete_work_item_link_dry_run",
+  "description": "Dry-run preview returns the DELETE path relative to the REST root (/polarion/rest/v1 not included).",
+  "call": {
+    "operation": "delete_work_item_link",
+    "args": {
+      "project_id": "ELK",
+      "work_item_id": "ELK-42",
+      "target_work_item_id": "ELK-12",
+      "role": "implements"
+    }
+  },
+  "exchanges": [],
+  "expect": {
+    "result": {
+      "dry_run": true,
+      "project_id": "ELK",
+      "work_item_id": "ELK-42",
+      "role": "implements",
+      "target_project_id": "ELK",
+      "target_work_item_id": "ELK-12",
+      "path": "/projects/ELK/workitems/ELK-42/linkedworkitems/implements/ELK/ELK-12"
+    }
+  }
+}

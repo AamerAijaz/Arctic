@@ -1,0 +1,35 @@
+{
+  "name": "create_work_item_dry_run",
+  "description": "dry_run defaults to true: no HTTP call, the would-be body is returned.",
+  "call": {
+    "operation": "create_work_item",
+    "args": {
+      "project_id": "ELK",
+      "wi_type": "task",
+      "title": "Fix login",
+      "description": "<p>SSO timeout</p>"
+    }
+  },
+  "exchanges": [],
+  "expect": {
+    "result": {
+      "dry_run": true,
+      "project_id": "ELK",
+      "body": {
+        "data": [
+          {
+            "type": "workitems",
+            "attributes": {
+              "type": "task",
+              "title": "Fix login",
+              "description": {
+                "type": "text/html",
+                "value": "<p>SSO timeout</p>"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

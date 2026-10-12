@@ -1,0 +1,35 @@
+{
+  "name": "whoami_api_error_redacts_token",
+  "description": "Other 4xx/5xx map to PolarionApiError(status, errors[0].detail) with bearer tokens redacted.",
+  "call": {
+    "operation": "get_current_user",
+    "args": {}
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/polarion/rest/v1/user",
+        "query": {}
+      },
+      "response": {
+        "status": 400,
+        "body": {
+          "errors": [
+            {
+              "detail": "bad field Bearer test-token"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "error": {
+      "type": "PolarionApiError",
+      "status": 400,
+      "message_contains": "bad field Bearer [redacted]",
+      "message_excludes": "test-token"
+    }
+  }
+}

@@ -5,4 +5,8 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.gradle/
 .cursor
+examples
+.vscode
+apps

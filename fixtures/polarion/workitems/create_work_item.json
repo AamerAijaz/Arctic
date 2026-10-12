@@ -1,0 +1,53 @@
+{
+  "name": "create_work_item",
+  "description": "POST a new work item (dry_run false). Body data is a one-element list; 201 response data may be a list.",
+  "call": {
+    "operation": "create_work_item",
+    "args": {
+      "project_id": "ELK",
+      "wi_type": "task",
+      "title": "Fix login",
+      "dry_run": false
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/polarion/rest/v1/projects/ELK/workitems",
+        "query": {},
+        "body": {
+          "data": [
+            {
+              "type": "workitems",
+              "attributes": {
+                "type": "task",
+                "title": "Fix login"
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "data": [
+            {
+              "type": "workitems",
+              "id": "ELK/ELK-42",
+              "links": {
+                "portal": "https://polarion.example.com/polarion/redirect/project/ELK/workitem?id=ELK-42"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "result": {
+      "id": "ELK/ELK-42",
+      "portal_url": "https://polarion.example.com/polarion/redirect/project/ELK/workitem?id=ELK-42"
+    }
+  }
+}

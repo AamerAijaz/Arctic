@@ -1,0 +1,66 @@
+{
+  "name": "create_work_item_all_fields",
+  "description": "Description is wrapped as text/html; status, severity and module (documents relationship) are optional. Response data as an object without links gives portal_url null.",
+  "call": {
+    "operation": "create_work_item",
+    "args": {
+      "project_id": "ELK",
+      "wi_type": "requirement",
+      "title": "Login must SSO",
+      "description": "<p>SSO timeout</p>",
+      "module": "ELK/_default/Spec",
+      "status": "draft",
+      "severity": "must_have",
+      "dry_run": false
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/polarion/rest/v1/projects/ELK/workitems",
+        "query": {},
+        "body": {
+          "data": [
+            {
+              "type": "workitems",
+              "attributes": {
+                "type": "requirement",
+                "title": "Login must SSO",
+                "description": {
+                  "type": "text/html",
+                  "value": "<p>SSO timeout</p>"
+                },
+                "status": "draft",
+                "severity": "must_have"
+              },
+              "relationships": {
+                "module": {
+                  "data": {
+                    "type": "documents",
+                    "id": "ELK/_default/Spec"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "data": {
+            "type": "workitems",
+            "id": "ELK/ELK-43"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "result": {
+      "id": "ELK/ELK-43",
+      "portal_url": null
+    }
+  }
+}

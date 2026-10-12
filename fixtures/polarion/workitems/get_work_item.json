@@ -1,0 +1,63 @@
+{
+  "name": "get_work_item",
+  "description": "GET one work item with description and assignee relationship ids.",
+  "call": {
+    "operation": "get_work_item",
+    "args": {
+      "project_id": "ELK",
+      "work_item_id": "ELK-42"
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/polarion/rest/v1/projects/ELK/workitems/ELK-42",
+        "query": {
+          "fields[workitems]": "id,title,type,status,description,assignee",
+          "include": "assignee"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": {
+            "type": "workitems",
+            "id": "ELK/ELK-42",
+            "attributes": {
+              "title": "Fix login",
+              "type": "task",
+              "status": "open",
+              "description": {
+                "type": "text/html",
+                "value": "<p>SSO</p>"
+              }
+            },
+            "relationships": {
+              "assignee": {
+                "data": [
+                  {
+                    "type": "users",
+                    "id": "alice"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "result": {
+      "id": "ELK/ELK-42",
+      "title": "Fix login",
+      "type": "task",
+      "status": "open",
+      "description": "<p>SSO</p>",
+      "assignee_ids": [
+        "alice"
+      ]
+    }
+  }
+}

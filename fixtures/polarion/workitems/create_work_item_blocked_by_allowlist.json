@@ -1,0 +1,24 @@
+{
+  "name": "create_work_item_blocked_by_allowlist",
+  "description": "Writes to a project outside POLARION_PROJECT_ALLOWLIST fail with 403 before any HTTP call.",
+  "call": {
+    "operation": "create_work_item",
+    "args": {
+      "project_id": "OTHER",
+      "wi_type": "task",
+      "title": "Nope",
+      "dry_run": false
+    }
+  },
+  "env": {
+    "POLARION_PROJECT_ALLOWLIST": "ELK"
+  },
+  "exchanges": [],
+  "expect": {
+    "error": {
+      "type": "PolarionApiError",
+      "status": 403,
+      "message_contains": "POLARION_PROJECT_ALLOWLIST"
+    }
+  }
+}

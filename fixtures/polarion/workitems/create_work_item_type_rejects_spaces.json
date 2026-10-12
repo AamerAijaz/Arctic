@@ -1,0 +1,19 @@
+{
+  "name": "create_work_item_type_rejects_spaces",
+  "description": "A type id containing whitespace raises a plain PolarionError before any HTTP call.",
+  "call": {
+    "operation": "create_work_item_type",
+    "args": {
+      "project_id": "ELK",
+      "type_id": "software mitigation",
+      "name": "X"
+    }
+  },
+  "exchanges": [],
+  "expect": {
+    "error": {
+      "type": "PolarionError",
+      "message_contains": "no spaces"
+    }
+  }
+}

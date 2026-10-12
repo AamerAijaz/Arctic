@@ -1,0 +1,53 @@
+{
+  "name": "assign_work_item",
+  "description": "PATCH the work item assignee relationship (replaces all assignees); 204 returns {id}.",
+  "call": {
+    "operation": "assign_work_item",
+    "args": {
+      "project_id": "ELK",
+      "work_item_id": "ELK-1",
+      "user_ids": [
+        "alice",
+        "bob"
+      ],
+      "dry_run": false
+    }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "PATCH",
+        "path": "/polarion/rest/v1/projects/ELK/workitems/ELK-1",
+        "query": {},
+        "body": {
+          "data": {
+            "type": "workitems",
+            "id": "ELK/ELK-1",
+            "relationships": {
+              "assignee": {
+                "data": [
+                  {
+                    "type": "users",
+                    "id": "alice"
+                  },
+                  {
+                    "type": "users",
+                    "id": "bob"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 204
+      }
+    }
+  ],
+  "expect": {
+    "result": {
+      "id": "ELK/ELK-1"
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "whoami_success",
+  "description": "GET /user returns the token owner; name and email come from attributes.",
+  "call": {
+    "operation": "get_current_user",
+    "args": {}
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/polarion/rest/v1/user",
+        "query": {}
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": {
+            "type": "users",
+            "id": "alice",
+            "attributes": {
+              "id": "alice",
+              "name": "Alice",
+              "email": "alice@example.com"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "result": {
+      "id": "alice",
+      "name": "Alice",
+      "email": "alice@example.com"
+    }
+  }
+}

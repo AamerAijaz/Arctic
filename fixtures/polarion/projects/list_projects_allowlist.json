@@ -1,0 +1,56 @@
+{
+  "name": "list_projects_allowlist",
+  "description": "With POLARION_PROJECT_ALLOWLIST set, projects outside the list are dropped client-side.",
+  "call": {
+    "operation": "list_projects",
+    "args": {}
+  },
+  "env": {
+    "POLARION_PROJECT_ALLOWLIST": "ELK"
+  },
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "path": "/polarion/rest/v1/projects",
+        "query": {
+          "fields[projects]": "id,name,description,active,trackerPrefix",
+          "page[size]": "100",
+          "page[number]": "1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "type": "projects",
+              "id": "ELK",
+              "attributes": {
+                "name": "Elk"
+              }
+            },
+            {
+              "type": "projects",
+              "id": "OTHER",
+              "attributes": {
+                "name": "Other"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "result": [
+      {
+        "id": "ELK",
+        "name": "Elk",
+        "description": null,
+        "active": null,
+        "tracker_prefix": null
+      }
+    ]
+  }
+}

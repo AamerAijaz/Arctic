@@ -1,0 +1,28 @@
+{
+  "name": "update_work_item_dry_run_change_type",
+  "description": "Dry-run preview includes change_type_to when given.",
+  "call": {
+    "operation": "update_work_item",
+    "args": {
+      "project_id": "ELK",
+      "work_item_id": "ELK-5",
+      "change_type_to": "hardware"
+    }
+  },
+  "exchanges": [],
+  "expect": {
+    "result": {
+      "dry_run": true,
+      "project_id": "ELK",
+      "work_item_id": "ELK-5",
+      "body": {
+        "data": {
+          "type": "workitems",
+          "id": "ELK/ELK-5",
+          "attributes": {}
+        }
+      },
+      "change_type_to": "hardware"
+    }
+  }
+}
