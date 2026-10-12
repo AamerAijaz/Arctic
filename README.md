@@ -7,6 +7,8 @@ Today the stack supports:
 - **`whoami`** — verify REST access and show the Polarion user for your token
 - **`list_projects` / `get_project`** — discover Polarion project ids
 - **`list_work_items`** — query work items (Lucene, for example `type:requirement`)
+- **`list_work_item_types`** — work-item type ids for a project (`userneed`, `hardware`, …)
+- **`create_work_item_type`** — add a work-item type option on a project (`dry_run` by default)
 - **`create_work_item`** — create one work item (`dry_run` by default)
 - **`update_work_item`** — update title, description, status, and/or type (`change_type_to`, `dry_run` by default)
 - **`get_work_item`** — read a work item back after create or update
@@ -113,6 +115,9 @@ uv run arctic create-work-item --project ELK --type task --title "Fix login"
 uv run arctic create-work-item --project ELK --type task --title "Fix login" --apply
 uv run arctic work-item ELK ELK-42
 uv run arctic work-items ELK --query "type:requirement"
+uv run arctic work-item-types ELK
+uv run arctic create-work-item-type --project ELK --id ux --name UX
+uv run arctic create-work-item-type --project ELK --id ux --name UX --apply
 uv run arctic link-roles ELK
 uv run arctic link --project ELK --from ELK-42 --to ELK-12 --role implements
 uv run arctic link --project ELK --from ELK-42 --to ELK-12 --role implements --apply
@@ -140,7 +145,7 @@ uv run arctic assign-work-item --project ELK --id ELK-42 --users alice,bob
 uv run arctic assign-work-item --project ELK --id ELK-42 --users alice,bob --apply
 ```
 
-`create-work-item`, `update-work-item`, `link`, `unlink`, `create-document`, `create-document-work-item`, `import-document`, `convert-headings`, `promote-requirements`, `assign-round-robin`, and `assign-work-item` are **dry runs** unless you pass `--apply`. `--type` on work-item commands is the Polarion work-item type id (`task`, `defect`, `requirement`, and so on), which must exist in that project. `--role` is a Polarion link-role id from `link-roles`; Polarion rejects combinations that violate that project's `linkRules`.
+`create-work-item`, `create-work-item-type`, `update-work-item`, `link`, `unlink`, `create-document`, `create-document-work-item`, `import-document`, `convert-headings`, `promote-requirements`, `assign-round-robin`, and `assign-work-item` are **dry runs** unless you pass `--apply`. `--type` on work-item commands is the Polarion work-item type id (`task`, `defect`, `requirement`, and so on), which must exist in that project. `--role` is a Polarion link-role id from `link-roles`; Polarion rejects combinations that violate that project's `linkRules`.
 
 On success `whoami` prints:
 
@@ -194,6 +199,7 @@ On Windows, if Cursor cannot find `uv`, set `command` to the full path to `uv.ex
 Reload MCP in Cursor. Example prompts:
 
 - *Who am I in Polarion?*
+- *List work-item types in drivepilot, then dry-run a userneed titled UND-104 Caregivers.*
 - *List my Polarion projects, then dry-run a task titled Fix login in project ELK.*
 - *List requirements in ELK, then dry-run an implements link from ELK-42 to that requirement.*
 - *Dry-run importing this attached .docx as a LiveDoc in ELK, then show the preview URL after apply.*
@@ -201,7 +207,7 @@ Reload MCP in Cursor. Example prompts:
 
 Word import needs a filesystem path the MCP **host** can read (for example the repo root on your machine). Browsers and chat UIs do not upload the `.docx` through MCP; put the file where the `mcp-polarion` process can open it and pass that path to `import_document`.
 
-The `whoami` and `list_projects` tools return ids and names, not the token. `create_work_item`, `update_work_item`, `create_work_item_link`, `delete_work_item_link`, `create_document`, `create_document_work_item`, `convert_heading_to_work_item`, `convert_headings_to_work_items`, `import_document`, `promote_document_requirements`, `assign_work_item`, and `assign_work_items_round_robin` default to `dry_run=true`; only set `dry_run=false` when you intend to create or change data. `list_requirement_blocks` is read-only. Call `list_link_roles` before linking or creating a document. Call `list_project_users` before assigning.
+The `whoami` and `list_projects` tools return ids and names, not the token. `create_work_item`, `create_work_item_type`, `update_work_item`, `create_work_item_link`, `delete_work_item_link`, `create_document`, `create_document_work_item`, `convert_heading_to_work_item`, `convert_headings_to_work_items`, `import_document`, `promote_document_requirements`, `assign_work_item`, and `assign_work_items_round_robin` default to `dry_run=true`; only set `dry_run=false` when you intend to create or change data. `list_requirement_blocks` is read-only. Call `list_work_item_types` before creating or promoting work items. Call `list_link_roles` before linking or creating a document. Call `list_project_users` before assigning.
 
 ## Claude Code (optional)
 
@@ -225,7 +231,6 @@ Tests mock Polarion HTTP; they do not need a live server.
 ## Roadmap
 
 - `arctic login` (local credential store)
-- Work-item type discovery
 - Documents — list/get/create/import, document parts, and in-document work items are available via CLI and MCP
 - Agent prompt path on `arctic` for natural-language commands with tool calling
 

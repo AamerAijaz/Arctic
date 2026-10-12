@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from urllib.parse import unquote
 
 import httpx
@@ -9,12 +10,14 @@ import pytest
 
 from polarion_client.client import PolarionClient
 from polarion_client.credentials import EnvCredentialProvider
-from polarion_client.errors import PolarionApiError
+from polarion_client.errors import PolarionApiError, PolarionError
 from polarion_client.models import (
     CreatedWorkItemLink,
+    CreatedWorkItemType,
     DeletedWorkItemLink,
     WorkItemLinkDeletePreview,
     WorkItemLinkPreview,
+    WorkItemTypeCreatePreview,
 )
 
 TOKEN = "super-secret-token"
@@ -75,6 +78,157 @@ def test_list_work_items_blocked_by_allowlist(
 
     with pytest.raises(PolarionApiError, match="ALLOWLIST"):
         _client(handler).list_work_items("OTHER")
+
+
+def test_list_work_item_types(env: None) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "/enumerations/~/workitem-type/~" in unquote(request.url.path)
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "type": "enumerations",
+                    "id": "ELK/~/workitem-type/~",
+                    "attributes": {
+                        "enumName": "workitem-type",
+                        "options": [
+                            {
+                                "id": "userneed",
+                                "name": "User Need",
+                                "description": "A documented user need.",
+                            },
+                            {
+                                "id": "hardware",
+                                "name": "Hardware",
+                            },
+                        ],
+                    },
+                }
+            },
+        )
+
+    types = _client(handler).list_work_item_types("ELK")
+    assert [item.id for item in types] == ["userneed", "hardware"]
+    assert types[0].name == "User Need"
+    assert types[0].description == "A documented user need."
+
+
+def test_list_work_item_types_rejects_bad_payload(env: None) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"data": {"type": "enumerations", "attributes": {}}},
+        )
+
+    with pytest.raises(PolarionError, match="work-item type"):
+        _client(handler).list_work_item_types("ELK")
+
+
+_TYPE_ENUM = {
+    "data": {
+        "type": "enumerations",
+        "id": "ELK/~/workitem-type/~",
+        "attributes": {
+            "enumName": "workitem-type",
+            "options": [
+                {
+                    "id": "hardware",
+                    "name": "hw",
+                    "color": "#111111",
+                    "iconURL": "/polarion/icons/default/enums/type_hardware.gif",
+                },
+                {
+                    "id": "softwarerequirement",
+                    "name": "Software Requirement",
+                    "color": "#222222",
+                    "iconURL": "/polarion/icons/default/enums/type_software.gif",
+                },
+            ],
+        },
+    }
+}
+
+
+def test_create_work_item_type_dry_run_appends_option(env: None) -> None:
+    patched = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal patched
+        if request.method == "PATCH":
+            patched = True
+            return httpx.Response(204)
+        assert request.method == "GET"
+        assert request.url.params["fields[enumerations]"] == "@all"
+        return httpx.Response(200, json=_TYPE_ENUM)
+
+    result = _client(handler).create_work_item_type(
+        "ELK", "ux", "UX", description="User experience requirement."
+    )
+    assert not patched
+    assert isinstance(result, WorkItemTypeCreatePreview)
+    assert result.body is not None
+    options = result.body["data"]["attributes"]["options"]
+    assert [item["id"] for item in options] == [
+        "hardware",
+        "softwarerequirement",
+        "ux",
+    ]
+    assert options[0]["color"] == "#111111"
+    assert options[-1] == {
+        "id": "ux",
+        "name": "UX",
+        "description": "User experience requirement.",
+        "color": "#222222",
+        "iconURL": "/polarion/icons/default/enums/type_software.gif",
+    }
+
+
+def test_create_work_item_type_apply_patches(env: None) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, json=_TYPE_ENUM)
+        assert request.method == "PATCH"
+        assert "/enumerations/~/workitem-type/~" in unquote(request.url.path)
+        body = json.loads(request.content)
+        ids = [item["id"] for item in body["data"]["attributes"]["options"]]
+        assert ids[-1] == "ux"
+        assert "hardware" in ids
+        return httpx.Response(204)
+
+    result = _client(handler).create_work_item_type(
+        "ELK", "ux", "UX", dry_run=False
+    )
+    assert isinstance(result, CreatedWorkItemType)
+    assert result.id == "ux"
+    assert result.name == "UX"
+    assert result.already_exists is False
+
+
+def test_create_work_item_type_already_exists_skips_patch(env: None) -> None:
+    patched = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal patched
+        if request.method == "PATCH":
+            patched = True
+            return httpx.Response(204)
+        return httpx.Response(200, json=_TYPE_ENUM)
+
+    result = _client(handler).create_work_item_type(
+        "ELK", "hardware", "hw", dry_run=False
+    )
+    assert not patched
+    assert isinstance(result, CreatedWorkItemType)
+    assert result.already_exists is True
+    assert result.id == "hardware"
+
+
+def test_create_work_item_type_rejects_spaces(env: None) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("no request")
+
+    with pytest.raises(PolarionError, match="no spaces"):
+        _client(handler).create_work_item_type("ELK", "software mitigation", "X")
 
 
 def test_list_link_roles(env: None) -> None:

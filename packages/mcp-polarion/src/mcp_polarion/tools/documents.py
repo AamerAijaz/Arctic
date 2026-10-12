@@ -236,8 +236,9 @@ def register_document_tools(mcp: FastMCP, client_factory: ClientFactory) -> None
     ) -> dict[str, Any]:
         """Create a work item and embed it in a LiveDoc as a document part.
 
-        `type` is the Polarion work-item type id. Creating with the document
-        module puts the WI in the Recycle Bin. Pass `previous_part` or
+        `type` is the Polarion work-item type id from list_work_item_types.
+        Creating with the document module puts the WI in the Recycle Bin.
+        Pass `previous_part` or
         `next_part` (a part id from list_document_parts) to insert it in the
         body at that position. Without those, Polarion appends at the end;
         `parent`/`after`/`before` then move the appended part. Default

@@ -19,6 +19,7 @@ from polarion_client.models import (
     CreatedDocumentWorkItem,
     CreatedWorkItem,
     CreatedWorkItemLink,
+    CreatedWorkItemType,
     DeletedWorkItemLink,
     Document,
     DocumentCreatePreview,
@@ -31,6 +32,7 @@ from polarion_client.models import (
     WorkItemLink,
     WorkItemLinkDeletePreview,
     WorkItemLinkPreview,
+    WorkItemTypeCreatePreview,
     WorkItemUpdatePreview,
 )
 
@@ -101,6 +103,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     work_items.add_argument("--page-size", type=int, default=100)
     work_items.add_argument("--page-number", type=int, default=1)
+
+    work_item_types = sub.add_parser(
+        "work-item-types",
+        help="List work-item type ids for a project",
+    )
+    work_item_types.add_argument("project_id")
+
+    create_type = sub.add_parser(
+        "create-work-item-type",
+        help="Add a work-item type option (dry-run unless --apply)",
+    )
+    create_type.add_argument("--project", required=True, dest="project_id")
+    create_type.add_argument("--id", required=True, dest="type_id")
+    create_type.add_argument("--name", required=True)
+    create_type.add_argument("--description")
+    create_type.add_argument("--color")
+    create_type.add_argument("--icon-url", dest="icon_url")
+    create_type.add_argument(
+        "--apply",
+        action="store_true",
+        help="PATCH Polarion. Without this flag, print the request body only.",
+    )
 
     link_roles = sub.add_parser(
         "link-roles",
@@ -525,6 +549,60 @@ def run_work_items(
             title = f"  {item.title}" if item.title else ""
             wi_type = f"  {item.type}" if item.type else ""
             print(f"{item.id}{wi_type}{title}", file=stream)
+
+    return _handle(action, out=out)
+
+
+def run_work_item_types(
+    client: PolarionClient, project_id: str, *, out: TextIO | None = None
+) -> int:
+    def action(stream: TextIO) -> None:
+        types = client.list_work_item_types(project_id)
+        if not types:
+            print("No work-item types.", file=stream)
+            return
+        for item in types:
+            name = f"  {item.name}" if item.name else ""
+            print(f"{item.id}{name}", file=stream)
+
+    return _handle(action, out=out)
+
+
+def run_create_work_item_type(
+    client: PolarionClient,
+    *,
+    project_id: str,
+    type_id: str,
+    name: str,
+    description: str | None,
+    color: str | None = None,
+    icon_url: str | None = None,
+    apply: bool = False,
+    out: TextIO | None = None,
+) -> int:
+    def action(stream: TextIO) -> None:
+        result = client.create_work_item_type(
+            project_id,
+            type_id,
+            name,
+            description=description,
+            color=color,
+            icon_url=icon_url,
+            dry_run=not apply,
+        )
+        if isinstance(result, WorkItemTypeCreatePreview):
+            print("dry_run: true", file=stream)
+            if result.already_exists:
+                print("already_exists: true", file=stream)
+            if result.body is not None:
+                print(json.dumps(result.body, indent=2), file=stream)
+            return
+        if isinstance(result, CreatedWorkItemType):
+            print(f"id: {result.id}", file=stream)
+            if result.name:
+                print(f"name: {result.name}", file=stream)
+            if result.already_exists:
+                print("already_exists: true", file=stream)
 
     return _handle(action, out=out)
 
@@ -1097,6 +1175,19 @@ def main(argv: list[str] | None = None) -> int:
             query=args.query,
             page_size=args.page_size,
             page_number=args.page_number,
+        )
+    if args.command == "work-item-types":
+        return run_work_item_types(client, args.project_id)
+    if args.command == "create-work-item-type":
+        return run_create_work_item_type(
+            client,
+            project_id=args.project_id,
+            type_id=args.type_id,
+            name=args.name,
+            description=args.description,
+            color=args.color,
+            icon_url=args.icon_url,
+            apply=args.apply,
         )
     if args.command == "link-roles":
         return run_link_roles(client, args.project_id)

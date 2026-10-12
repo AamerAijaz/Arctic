@@ -5,7 +5,14 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from arctic.cli import run_link, run_link_roles, run_unlink, run_work_items
+from arctic.cli import (
+    run_create_work_item_type,
+    run_link,
+    run_link_roles,
+    run_unlink,
+    run_work_item_types,
+    run_work_items,
+)
 from polarion_client.client import PolarionClient
 from polarion_client.credentials import EnvCredentialProvider
 
@@ -48,6 +55,63 @@ def test_work_items_lists_ids(capsys: pytest.CaptureFixture[str], env: None) -> 
     assert "ELK/ELK-12" in out
     assert "requirement" in out
     assert "Login must SSO" in out
+
+
+def test_work_item_types_lists_ids(
+    capsys: pytest.CaptureFixture[str], env: None
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "type": "enumerations",
+                    "id": "ELK/~/workitem-type/~",
+                    "attributes": {
+                        "options": [
+                            {"id": "userneed", "name": "User Need"},
+                        ]
+                    },
+                }
+            },
+        )
+
+    assert run_work_item_types(_client(handler), "ELK") == 0
+    out = capsys.readouterr().out
+    assert "userneed" in out
+    assert "User Need" in out
+
+
+def test_create_work_item_type_dry_run(
+    capsys: pytest.CaptureFixture[str], env: None
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "type": "enumerations",
+                    "id": "ELK/~/workitem-type/~",
+                    "attributes": {
+                        "options": [{"id": "hardware", "name": "hw"}],
+                    },
+                }
+            },
+        )
+
+    assert (
+        run_create_work_item_type(
+            _client(handler),
+            project_id="ELK",
+            type_id="ux",
+            name="UX",
+            description=None,
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "dry_run: true" in out
+    assert '"id": "ux"' in out
 
 
 def test_link_roles_lists_ids(capsys: pytest.CaptureFixture[str], env: None) -> None:
