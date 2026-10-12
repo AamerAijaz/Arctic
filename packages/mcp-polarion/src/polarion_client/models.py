@@ -104,6 +104,51 @@ class WorkItemUpdatePreview:
 
 
 @dataclass(frozen=True)
+class WorkItemType:
+    id: str
+    name: str | None = None
+    description: str | None = None
+
+    def to_dict(self) -> dict[str, str | None]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+        }
+
+
+@dataclass(frozen=True)
+class CreatedWorkItemType:
+    id: str
+    name: str | None = None
+    description: str | None = None
+    already_exists: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "already_exists": self.already_exists,
+        }
+
+
+@dataclass(frozen=True)
+class WorkItemTypeCreatePreview:
+    project_id: str
+    body: dict[str, Any] | None
+    already_exists: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "dry_run": True,
+            "project_id": self.project_id,
+            "already_exists": self.already_exists,
+            "body": self.body,
+        }
+
+
+@dataclass(frozen=True)
 class LinkRole:
     id: str
     name: str | None = None

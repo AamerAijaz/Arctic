@@ -30,6 +30,7 @@ from polarion_client.models import (
     CreatedDocumentWorkItem,
     CreatedWorkItem,
     CreatedWorkItemLink,
+    CreatedWorkItemType,
     CurrentUser,
     DeletedWorkItemLink,
     Document,
@@ -47,6 +48,8 @@ from polarion_client.models import (
     WorkItemLink,
     WorkItemLinkDeletePreview,
     WorkItemLinkPreview,
+    WorkItemType,
+    WorkItemTypeCreatePreview,
     WorkItemUpdatePreview,
 )
 
@@ -269,6 +272,94 @@ class PolarionClient:
             params=params,
         )
         return [_parse_work_item(item) for item in _list_data(payload, "work item list")]
+
+    def list_work_item_types(self, project_id: str) -> list[WorkItemType]:
+        """GET /projects/{projectId}/enumerations/~/workitem-type/~."""
+        payload = self._get_work_item_type_enumeration(project_id)
+        return _parse_work_item_types(payload)
+
+    def create_work_item_type(
+        self,
+        project_id: str,
+        type_id: str,
+        name: str,
+        *,
+        description: str | None = None,
+        color: str | None = None,
+        icon_url: str | None = None,
+        dry_run: bool = True,
+    ) -> CreatedWorkItemType | WorkItemTypeCreatePreview:
+        """PATCH workitem-type options, or preview the body when dry_run.
+
+        Polarion has no create-type resource. This GETs the project
+        enumeration, appends one option, and PATCHes the full options list.
+        Existing options are sent back unchanged. If `type_id` already exists,
+        no PATCH is sent.
+        """
+        _assert_project_allowed(project_id)
+        type_id = type_id.strip()
+        name = name.strip()
+        if not type_id or any(ch.isspace() for ch in type_id):
+            raise PolarionError(
+                "Work-item type id must be non-empty and contain no spaces."
+            )
+        if not name:
+            raise PolarionError("Work-item type name must be non-empty.")
+        payload = self._get_work_item_type_enumeration(project_id)
+        options = _raw_enumeration_options(payload)
+        existing = next(
+            (option for option in options if option.get("id") == type_id),
+            None,
+        )
+        if existing is not None:
+            created = _work_item_type_from_option(existing, already_exists=True)
+            if created is None:
+                raise PolarionError("Polarion returned a type option without an id.")
+            if dry_run:
+                return WorkItemTypeCreatePreview(
+                    project_id=project_id,
+                    body=None,
+                    already_exists=True,
+                )
+            return created
+        new_option = _new_work_item_type_option(
+            options,
+            type_id=type_id,
+            name=name,
+            description=description,
+            color=color,
+            icon_url=icon_url,
+        )
+        body = {
+            "data": {
+                "type": "enumerations",
+                "id": f"{project_id}/~/workitem-type/~",
+                "attributes": {"options": [*options, new_option]},
+            }
+        }
+        if dry_run:
+            return WorkItemTypeCreatePreview(project_id=project_id, body=body)
+        encoded = quote(project_id, safe="")
+        self._request(
+            "PATCH",
+            f"/projects/{encoded}/enumerations/~/workitem-type/~",
+            json=body,
+        )
+        desc = description.strip() if description else ""
+        return CreatedWorkItemType(
+            id=type_id,
+            name=name,
+            description=desc or None,
+        )
+
+    def _get_work_item_type_enumeration(self, project_id: str) -> Any:
+        _assert_project_allowed(project_id)
+        encoded = quote(project_id, safe="")
+        return self._request(
+            "GET",
+            f"/projects/{encoded}/enumerations/~/workitem-type/~",
+            params={"fields[enumerations]": "@all"},
+        )
 
     def list_link_roles(self, project_id: str) -> list[LinkRole]:
         """GET /projects/{projectId}/enumerations/~/workitem-link-role/~."""
@@ -1823,6 +1914,78 @@ def _parse_created_work_item(payload: Any) -> CreatedWorkItem:
         id=item_id,
         portal_url=portal if isinstance(portal, str) and portal else None,
     )
+
+
+def _parse_work_item_types(payload: Any) -> list[WorkItemType]:
+    types: list[WorkItemType] = []
+    for option in _raw_enumeration_options(payload):
+        parsed = _work_item_type_from_option(option)
+        if parsed is not None:
+            types.append(
+                WorkItemType(
+                    id=parsed.id,
+                    name=parsed.name,
+                    description=parsed.description,
+                )
+            )
+    return types
+
+
+def _raw_enumeration_options(payload: Any) -> list[dict[str, Any]]:
+    data = _single_data(payload, "work item type enumeration")
+    attributes = data.get("attributes") if isinstance(data.get("attributes"), dict) else {}
+    options = attributes.get("options")
+    if not isinstance(options, list):
+        raise PolarionError("Polarion returned an unexpected work-item type response.")
+    return [option for option in options if isinstance(option, dict)]
+
+
+def _work_item_type_from_option(
+    option: dict[str, Any], *, already_exists: bool = False
+) -> CreatedWorkItemType | None:
+    type_id = option.get("id")
+    if not isinstance(type_id, str) or not type_id:
+        return None
+    name = option.get("name")
+    description = option.get("description")
+    return CreatedWorkItemType(
+        id=type_id,
+        name=name if isinstance(name, str) and name else None,
+        description=description if isinstance(description, str) and description else None,
+        already_exists=already_exists,
+    )
+
+
+def _new_work_item_type_option(
+    existing: list[dict[str, Any]],
+    *,
+    type_id: str,
+    name: str,
+    description: str | None,
+    color: str | None,
+    icon_url: str | None,
+) -> dict[str, Any]:
+    template = _template_work_item_type_option(existing)
+    option: dict[str, Any] = {"id": type_id, "name": name}
+    desc = description.strip() if description else ""
+    if desc:
+        option["description"] = desc
+    resolved_color = color.strip() if color else template.get("color")
+    if isinstance(resolved_color, str) and resolved_color:
+        option["color"] = resolved_color
+    resolved_icon = icon_url.strip() if icon_url else template.get("iconURL")
+    if isinstance(resolved_icon, str) and resolved_icon:
+        option["iconURL"] = resolved_icon
+    return option
+
+
+def _template_work_item_type_option(existing: list[dict[str, Any]]) -> dict[str, Any]:
+    by_id = {option.get("id"): option for option in existing}
+    for type_id in ("softwarerequirement", "systemrequirement", "requirement"):
+        option = by_id.get(type_id)
+        if isinstance(option, dict):
+            return option
+    return existing[-1] if existing else {}
 
 
 def _parse_link_roles(payload: Any) -> list[LinkRole]:

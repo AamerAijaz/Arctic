@@ -12,8 +12,10 @@ from mcp_polarion.tools.auth import ClientFactory
 from polarion_client.errors import PolarionError
 from polarion_client.models import (
     CreatedWorkItem,
+    CreatedWorkItemType,
     UpdatedWorkItem,
     WorkItemCreatePreview,
+    WorkItemTypeCreatePreview,
     WorkItemUpdatePreview,
 )
 
@@ -62,9 +64,10 @@ def register_workitem_tools(mcp: FastMCP, client_factory: ClientFactory) -> None
         """Create one work item in a Polarion project.
 
         `type` is the Polarion work-item type id (for example task or defect),
-        not the JSON:API resource name. Call list_projects if project_id is
-        unknown. Default dry_run=true only returns the request Polarion would
-        receive; set dry_run=false to create the item.
+        not the JSON:API resource name. Call list_work_item_types first to
+        pick a valid id. Call list_projects if project_id is unknown. Default
+        dry_run=true only returns the request Polarion would receive; set
+        dry_run=false to create the item.
         """
         try:
             result = client_factory().create_work_item(
@@ -81,6 +84,57 @@ def register_workitem_tools(mcp: FastMCP, client_factory: ClientFactory) -> None
         if isinstance(result, CreatedWorkItem):
             return result.to_dict()
         raise RuntimeError("Unexpected create_work_item result.")
+
+    @mcp.tool
+    def list_work_item_types(project_id: str) -> dict[str, Any]:
+        """List Polarion work-item type ids for a project.
+
+        Call this before create_work_item or promote_document_requirements.
+        Returned `id` is what Polarion expects as `type` (for example
+        hardware, requirement, userneed), not the UI display name.
+        """
+        try:
+            types = client_factory().list_work_item_types(project_id)
+        except PolarionError as exc:
+            raise RuntimeError(str(exc)) from None
+        return {"types": [item.to_dict() for item in types]}
+
+    @mcp.tool
+    def create_work_item_type(
+        project_id: str,
+        type_id: str,
+        name: str,
+        description: str | None = None,
+        color: str | None = None,
+        icon_url: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """Add a Polarion work-item type option on a project.
+
+        Polarion stores types as `workitem-type` enumeration options. This
+        GETs the current options, appends `type_id` / `name`, and PATCHes
+        the full list so existing types are not replaced. `type_id` is the
+        id create_work_item expects (for example ux). Default dry_run=true
+        only returns the PATCH Polarion would receive; set dry_run=false
+        to apply. If the id already exists, no PATCH is sent.
+        """
+        try:
+            result = client_factory().create_work_item_type(
+                project_id,
+                type_id,
+                name,
+                description=description,
+                color=color,
+                icon_url=icon_url,
+                dry_run=dry_run,
+            )
+        except PolarionError as exc:
+            raise RuntimeError(str(exc)) from None
+        if isinstance(result, WorkItemTypeCreatePreview):
+            return result.to_dict()
+        if isinstance(result, CreatedWorkItemType):
+            return result.to_dict()
+        raise RuntimeError("Unexpected create_work_item_type result.")
 
     @mcp.tool
     def get_work_item(project_id: str, work_item_id: str) -> dict[str, Any]:
@@ -108,7 +162,8 @@ def register_workitem_tools(mcp: FastMCP, client_factory: ClientFactory) -> None
 
         Provide at least one of title, description, status, or
         change_type_to. `change_type_to` is a Polarion work-item type id
-        (PATCH query changeTypeTo). Call get_work_item first if you need
+        from list_work_item_types (PATCH query changeTypeTo). Call
+        get_work_item first if you need
         the current values. Default dry_run=true only returns the PATCH
         body Polarion would receive; set dry_run=false to apply.
         """
