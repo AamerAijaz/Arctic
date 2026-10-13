@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-put-model"
+description = "Enables the put_model command without any pre-configured scope."
+commands.allow = ["put_model"]
+
+[[permission]]
+identifier = "deny-put-model"
+description = "Denies the put_model command without any pre-configured scope."
+commands.deny = ["put_model"]

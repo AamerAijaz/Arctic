@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Main window: core window defaults plus Arctic's own commands.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "allow-get-server-state",
+    "allow-get-server-logs",
+    "allow-restart-server",
+    "allow-get-health",
+    "allow-get-setup-status",
+    "allow-put-polarion",
+    "allow-put-model"
+  ]
+}
