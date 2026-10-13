@@ -3,7 +3,7 @@
     "mcp-polarion": {
       "type": "stdio",
       "command": "uv",
-      "args": ["run", "--directory", ".", "mcp-polarion"]
+      "args": ["run", "--project", "prototype", "mcp-polarion"]
     }
   }
 }

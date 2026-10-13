@@ -1,6 +1,8 @@
 # Arctic
 
-Arctic connects Polarion ALM to AI assistants through a custom [Model Context Protocol](https://modelcontextprotocol.io) server and a small CLI. Authentication uses a Polarion personal access token (PAT) configured outside the LLM; tools never accept or return secrets.
+Arctic connects Polarion ALM to AI assistants through a custom [Model Context Protocol](https://modelcontextprotocol.io) server. Authentication uses a Polarion personal access token (PAT) configured outside the LLM; tools never accept or return secrets.
+
+A Java 25 / Spring Boot MCP Server is under construction at the repo root. Until that replacement exposes tools, **the live MCP Server is the Python prototype** under [`prototype/`](prototype/). The Arctic CLI is frozen there and is not part of the Java product.
 
 Today the stack supports:
 
@@ -36,14 +38,16 @@ Word files use Polarion's REST `importWordDocument` action (native LiveDoc conve
 
 | Path | Role |
 |------|------|
-| [`packages/mcp-polarion`](packages/mcp-polarion) | MCP server (`mcp-polarion`) and Polarion REST client |
-| [`packages/arctic`](packages/arctic) | CLI (`arctic`) |
-| [`.mcp.json`](.mcp.json) | Example Cursor MCP config (stdio) |
+| [`src/main/java/com/arctic/mcp`](src/main/java/com/arctic/mcp) | Java MCP Server (Spring Boot, stdio, WIP — no tools yet) |
+| [`prototype/`](prototype/) | Frozen Python uv workspace; **live** MCP Server (`mcp-polarion`) |
+| [`prototype/packages/arctic`](prototype/packages/arctic) | Frozen Arctic CLI (not ported) |
+| [`.mcp.json`](.mcp.json) | Cursor MCP config (stdio; still launches Python) |
 | [`.env.example`](.env.example) | Template for local credentials |
 
 ## Prerequisites
 
-- **[uv](https://docs.astral.sh/uv/)** — installs Python 3.12 and project dependencies
+- **Java 25** (LTS) — for the WIP Spring Boot MCP Server (`./gradlew bootRun`)
+- **[uv](https://docs.astral.sh/uv/)** — installs Python 3.12 and the prototype (live MCP Server)
 - A **Polarion** instance with the **REST API enabled**
 - A **personal access token** for a Polarion user who can access the projects you care about
 
@@ -76,13 +80,21 @@ API calls run as that user (permissions, author, audit). Prefer each person’s 
 
 ## Install
 
-From the repository root:
+From the repository root, sync the Python prototype (the live MCP Server):
 
 ```bash
-uv sync --all-packages --group dev
+uv sync --project prototype --all-packages --group dev
 ```
 
-This creates `.venv` (Python 3.12+) and installs `mcp-polarion`, `arctic`, and dev tools such as pytest.
+This creates a `.venv` and installs `mcp-polarion`, the frozen Arctic CLI, and pytest.
+
+The Java skeleton uses the Gradle wrapper (no global Gradle install required):
+
+```bash
+./gradlew bootRun
+```
+
+That process is an empty stdio MCP Server (name `arctic`, zero tools). Do not point Cursor at it yet; `.mcp.json` still launches the Python prototype.
 
 ## Configure credentials
 
@@ -107,42 +119,44 @@ Run commands from the **repository root** so `.env` is found, or export `POLARIO
 
 ## Verify with the CLI
 
+The Arctic CLI is frozen in `prototype/` and is not part of the Java product. It still runs from the **repository root** (so `.env` loads):
+
 ```bash
-uv run arctic whoami
-uv run arctic projects
-uv run arctic project ELK
-uv run arctic create-work-item --project ELK --type task --title "Fix login"
-uv run arctic create-work-item --project ELK --type task --title "Fix login" --apply
-uv run arctic work-item ELK ELK-42
-uv run arctic work-items ELK --query "type:requirement"
-uv run arctic work-item-types ELK
-uv run arctic create-work-item-type --project ELK --id ux --name UX
-uv run arctic create-work-item-type --project ELK --id ux --name UX --apply
-uv run arctic link-roles ELK
-uv run arctic link --project ELK --from ELK-42 --to ELK-12 --role implements
-uv run arctic link --project ELK --from ELK-42 --to ELK-12 --role implements --apply
-uv run arctic links ELK ELK-42
-uv run arctic backlinks ELK ELK-12
-uv run arctic unlink --project ELK --from ELK-42 --to ELK-12 --role implements --apply
-uv run arctic update-work-item --project ELK --id ELK-42 --title "Fix login again"
-uv run arctic update-work-item --project ELK --id ELK-42 --status done --apply
-uv run arctic update-work-item --project ELK --id ELK-5 --change-type-to hardware
-uv run arctic documents ELK
-uv run arctic document ELK Specs
-uv run arctic create-document --project ELK --module-name Specs --type req_specification --structure-link-role has_parent --title "Specifications"
-uv run arctic create-document --project ELK --module-name Specs --type req_specification --structure-link-role has_parent --apply
-uv run arctic document-parts ELK Specs
-uv run arctic create-document-work-item --project ELK --document Specs --type requirement --title "REQ-1"
-uv run arctic import-document --project ELK --file ./spec.docx
-uv run arctic import-document --project ELK --file ./spec.docx --apply
-uv run arctic requirement-blocks ELK Specs --sections Functional,Physical
-uv run arctic promote-requirements --project ELK --document Specs --sections Functional,Physical --type hardware
-uv run arctic promote-requirements --project ELK --document Specs --sections Functional,Physical --type hardware --apply
-uv run arctic convert-headings --project ELK --document Specs --type hardware --items-file ./items.json
-uv run arctic assign-round-robin --project ELK --ids DP-1,DP-2 --users alice,bob --apply
-uv run arctic project-users ELK
-uv run arctic assign-work-item --project ELK --id ELK-42 --users alice,bob
-uv run arctic assign-work-item --project ELK --id ELK-42 --users alice,bob --apply
+uv run --project prototype arctic whoami
+uv run --project prototype arctic projects
+uv run --project prototype arctic project ELK
+uv run --project prototype arctic create-work-item --project ELK --type task --title "Fix login"
+uv run --project prototype arctic create-work-item --project ELK --type task --title "Fix login" --apply
+uv run --project prototype arctic work-item ELK ELK-42
+uv run --project prototype arctic work-items ELK --query "type:requirement"
+uv run --project prototype arctic work-item-types ELK
+uv run --project prototype arctic create-work-item-type --project ELK --id ux --name UX
+uv run --project prototype arctic create-work-item-type --project ELK --id ux --name UX --apply
+uv run --project prototype arctic link-roles ELK
+uv run --project prototype arctic link --project ELK --from ELK-42 --to ELK-12 --role implements
+uv run --project prototype arctic link --project ELK --from ELK-42 --to ELK-12 --role implements --apply
+uv run --project prototype arctic links ELK ELK-42
+uv run --project prototype arctic backlinks ELK ELK-12
+uv run --project prototype arctic unlink --project ELK --from ELK-42 --to ELK-12 --role implements --apply
+uv run --project prototype arctic update-work-item --project ELK --id ELK-42 --title "Fix login again"
+uv run --project prototype arctic update-work-item --project ELK --id ELK-42 --status done --apply
+uv run --project prototype arctic update-work-item --project ELK --id ELK-5 --change-type-to hardware
+uv run --project prototype arctic documents ELK
+uv run --project prototype arctic document ELK Specs
+uv run --project prototype arctic create-document --project ELK --module-name Specs --type req_specification --structure-link-role has_parent --title "Specifications"
+uv run --project prototype arctic create-document --project ELK --module-name Specs --type req_specification --structure-link-role has_parent --apply
+uv run --project prototype arctic document-parts ELK Specs
+uv run --project prototype arctic create-document-work-item --project ELK --document Specs --type requirement --title "REQ-1"
+uv run --project prototype arctic import-document --project ELK --file ./spec.docx
+uv run --project prototype arctic import-document --project ELK --file ./spec.docx --apply
+uv run --project prototype arctic requirement-blocks ELK Specs --sections Functional,Physical
+uv run --project prototype arctic promote-requirements --project ELK --document Specs --sections Functional,Physical --type hardware
+uv run --project prototype arctic promote-requirements --project ELK --document Specs --sections Functional,Physical --type hardware --apply
+uv run --project prototype arctic convert-headings --project ELK --document Specs --type hardware --items-file ./items.json
+uv run --project prototype arctic assign-round-robin --project ELK --ids DP-1,DP-2 --users alice,bob --apply
+uv run --project prototype arctic project-users ELK
+uv run --project prototype arctic assign-work-item --project ELK --id ELK-42 --users alice,bob
+uv run --project prototype arctic assign-work-item --project ELK --id ELK-42 --users alice,bob --apply
 ```
 
 `create-work-item`, `create-work-item-type`, `update-work-item`, `link`, `unlink`, `create-document`, `create-document-work-item`, `import-document`, `convert-headings`, `promote-requirements`, `assign-round-robin`, and `assign-work-item` are **dry runs** unless you pass `--apply`. `--type` on work-item commands is the Polarion work-item type id (`task`, `defect`, `requirement`, and so on), which must exist in that project. `--role` is a Polarion link-role id from `link-roles`; Polarion rejects combinations that violate that project's `linkRules`.
@@ -174,7 +188,7 @@ Project config is in [`.mcp.json`](.mcp.json):
     "mcp-polarion": {
       "type": "stdio",
       "command": "uv",
-      "args": ["run", "--directory", ".", "mcp-polarion"]
+      "args": ["run", "--project", "prototype", "mcp-polarion"]
     }
   }
 }
@@ -215,7 +229,7 @@ The `whoami` and `list_projects` tools return ids and names, not the token. `cre
 claude mcp add arctic \
   -e POLARION_URL=https://your-host.example.com \
   -e POLARION_TOKEN=your-pat \
-  -- uv run --directory /path/to/arctic mcp-polarion
+  -- uv run --project /path/to/arctic/prototype mcp-polarion
 ```
 
 Use your actual repo path on Windows or Unix.
@@ -223,10 +237,10 @@ Use your actual repo path on Windows or Unix.
 ## Tests
 
 ```bash
-uv run pytest
+cd prototype && uv run pytest
 ```
 
-Tests mock Polarion HTTP; they do not need a live server.
+Tests mock Polarion HTTP; they do not need a live server. They cover the Python Polarion Client and Arctic CLI, not the Java MCP Server.
 
 ## Roadmap
 

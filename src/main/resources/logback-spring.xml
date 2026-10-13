@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>build/arctic-mcp.log</file>
+        <append>true</append>
+        <encoder>
+            <pattern>${FILE_LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+    <root level="WARN">
+        <appender-ref ref="FILE"/>
+    </root>
+</configuration>
