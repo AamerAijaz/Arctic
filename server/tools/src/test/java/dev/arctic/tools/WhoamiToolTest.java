@@ -11,6 +11,7 @@ import dev.arctic.polarion.testing.FixtureServer;
 import dev.arctic.polarion.testing.Fixtures;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import tools.jackson.databind.json.JsonMapper;
 
 class WhoamiToolTest {
@@ -70,6 +71,6 @@ class WhoamiToolTest {
 
     private static ToolCallback[] callbacks(PolarionClient client) {
         var tools = new ToolsConfiguration();
-        return tools.polarionTools(tools.whoamiTool(client)).getToolCallbacks();
+        return MethodToolCallbackProvider.builder().toolObjects(tools.whoamiTool(client)).build().getToolCallbacks();
     }
 }

@@ -32,7 +32,24 @@ class StdioProtocolTest {
 
             send(session.stdin, Map.of("jsonrpc", "2.0", "id", 2, "method", "tools/list"));
             JsonNode tools = awaitResponse(session.stdout, 2).path("result").path("tools");
-            assertThat(tools.valueStream().map(tool -> tool.path("name").asString())).containsExactly("whoami");
+            assertThat(tools.valueStream().map(tool -> tool.path("name").asString())).containsExactlyInAnyOrder(
+                    "whoami",
+                    "polarion_server",
+                    "list_projects",
+                    "get_project",
+                    "list_work_items",
+                    "get_work_item",
+                    "list_work_item_types",
+                    "create_work_item",
+                    "update_work_item",
+                    "create_work_item_type",
+                    "list_link_roles",
+                    "list_work_item_links",
+                    "list_work_item_backlinks",
+                    "create_work_item_link",
+                    "delete_work_item_link",
+                    "list_project_users",
+                    "assign_work_item");
 
             JsonNode result = callWhoami(session, 3);
             assertThat(result.path("isError").asBoolean()).as("whoami without setup is a tool error").isTrue();

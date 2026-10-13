@@ -37,7 +37,20 @@ public final class PolarionClient {
 
     /** {@code GET /user}: the Polarion user for this token. */
     public CurrentUser getCurrentUser() {
-        return CurrentUser.fromJson(request("GET", "/user", Map.of(), null));
+        return CurrentUser.fromJson(call("GET", "/user", Map.of(), null));
+    }
+
+    /** The REST root for this token's Polarion. Does not include the token. */
+    public String restRoot() {
+        return credentials.get().restRoot();
+    }
+
+    /**
+     * One Polarion REST call. {@code path} is relative to the REST root. A null body sends no entity.
+     * Returns the parsed JSON body, or null for 204 and empty bodies.
+     */
+    public JsonNode call(String method, String path, Map<String, String> query, JsonNode body) {
+        return request(method, path, query, body);
     }
 
     /**
