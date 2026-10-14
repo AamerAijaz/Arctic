@@ -7,3 +7,5 @@ dist/
 build/
 .gradle/
 .cursor
+.vscode
+bin/

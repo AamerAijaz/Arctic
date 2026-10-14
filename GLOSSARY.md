@@ -12,6 +12,10 @@ _Avoid_: the repo, packages repository
 The component that speaks Polarion's REST API. Tools never see the personal access token.
 _Avoid_: Polarion, HTTP client, REST client
 
+**Polarion Credentials**:
+The normalized REST root and personal access token supplied to the Polarion Client from outside it. Tools never accept or return them.
+_Avoid_: secrets, config, connection settings
+
 **Arctic CLI**:
 The frozen command-line program. It is not part of the product surface.
 _Avoid_: CLI, command, arctic when meaning the MCP Server
