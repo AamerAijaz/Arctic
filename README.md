@@ -38,15 +38,15 @@ Word files use Polarion's REST `importWordDocument` action (native LiveDoc conve
 
 | Path | Role |
 |------|------|
-| [`src/main/java/com/arctic/mcp`](src/main/java/com/arctic/mcp) | Java MCP Server (Spring Boot, stdio, WIP — no tools yet) |
+| [`src/main/java/com/arctic/mcp`](src/main/java/com/arctic/mcp) | Java MCP Server (Spring Boot, Streamable HTTP on `127.0.0.1:8080`, `whoami`) |
 | [`prototype/`](prototype/) | Frozen Python uv workspace; **live** MCP Server (`mcp-polarion`) |
 | [`prototype/packages/arctic`](prototype/packages/arctic) | Frozen Arctic CLI (not ported) |
-| [`.mcp.json`](.mcp.json) | Cursor MCP config (stdio; still launches Python) |
+| [`.mcp.json`](.mcp.json) | MCP config: Java `arctic` is a loopback URL; the Prototype stays stdio |
 | [`.env.example`](.env.example) | Template for local credentials |
 
 ## Prerequisites
 
-- **Java 25** (LTS) — for the WIP Spring Boot MCP Server (`./gradlew bootRun`)
+- **Java 25** (LTS) — for the MCP Server (`./gradlew bootRun`)
 - **[uv](https://docs.astral.sh/uv/)** — installs Python 3.12 and the prototype (live MCP Server)
 - A **Polarion** instance with the **REST API enabled**
 - A **personal access token** for a Polarion user who can access the projects you care about
@@ -88,13 +88,22 @@ uv sync --project prototype --all-packages --group dev
 
 This creates a `.venv` and installs `mcp-polarion`, the frozen Arctic CLI, and pytest.
 
-The Java skeleton uses the Gradle wrapper (no global Gradle install required):
+The Java MCP Server uses the Gradle wrapper (no global Gradle install required). Start it from the repository root so `.env` loads:
 
 ```bash
 ./gradlew bootRun
 ```
 
-That process is an empty stdio MCP Server (name `arctic`, zero tools). Do not point Cursor at it yet; `.mcp.json` still launches the Python prototype.
+It listens at `http://127.0.0.1:8080/mcp` until you stop it. Cursor, Claude Code, Codex, and a custom harness connect to that URL.
+
+If port 8080 is already taken, set `server.port` and use that same port in every host URL. The path stays `/mcp`.
+
+An executable jar is the same server:
+
+```bash
+./gradlew bootJar
+java -jar build/libs/arctic-mcp-0.1.0.jar
+```
 
 ## Configure credentials
 
@@ -178,7 +187,7 @@ email: ...
 
 ## Use with Cursor (MCP)
 
-The MCP server speaks stdio. Cursor starts it as a subprocess; you do not run it interactively in a terminal for normal use.
+Start the Java MCP Server first (`./gradlew bootRun` from the repo root). Cursor connects to the URL. The `arctic` entry is only that URL.
 
 Project config is in [`.mcp.json`](.mcp.json):
 
@@ -189,17 +198,22 @@ Project config is in [`.mcp.json`](.mcp.json):
       "type": "stdio",
       "command": "uv",
       "args": ["run", "--project", "prototype", "mcp-polarion"]
+    },
+    "arctic": {
+      "url": "http://127.0.0.1:8080/mcp"
     }
   }
 }
 ```
 
+`arctic` is the Java MCP Server. `mcp-polarion` is the Prototype and still speaks stdio.
+
 Requirements:
 
-1. **Working directory** for the server must be this repo root (so `.env` loads).
-2. **Credentials** — either `.env` in the repo root or an `env` block on the server entry in Cursor MCP settings (do not commit tokens).
+1. **Java MCP Server** — running on this machine, started from the repo root so `.env` supplies `POLARION_URL` and `POLARION_TOKEN`. The personal access token stays in that process. It is not placed in MCP config.
+2. **Prototype** — working directory is this repo root (so `.env` loads), or an `env` block on that server entry (do not commit tokens).
 
-Example with explicit env in Cursor (replace values):
+Example with explicit env for the Prototype (replace values):
 
 ```json
 "env": {
@@ -208,9 +222,9 @@ Example with explicit env in Cursor (replace values):
 }
 ```
 
-On Windows, if Cursor cannot find `uv`, set `command` to the full path to `uv.exe`.
+On Windows, if Cursor cannot find `uv`, set the Prototype `command` to the full path to `uv.exe`.
 
-Reload MCP in Cursor. Example prompts:
+Reload MCP in Cursor after the Java MCP Server is listening. Example prompts:
 
 - *Who am I in Polarion?*
 - *List work-item types in drivepilot, then dry-run a userneed titled UND-104 Caregivers.*
@@ -223,7 +237,16 @@ Word import needs a filesystem path the MCP **host** can read (for example the r
 
 The `whoami` and `list_projects` tools return ids and names, not the token. `create_work_item`, `create_work_item_type`, `update_work_item`, `create_work_item_link`, `delete_work_item_link`, `create_document`, `create_document_work_item`, `convert_heading_to_work_item`, `convert_headings_to_work_items`, `import_document`, `promote_document_requirements`, `assign_work_item`, and `assign_work_items_round_robin` default to `dry_run=true`; only set `dry_run=false` when you intend to create or change data. `list_requirement_blocks` is read-only. Call `list_work_item_types` before creating or promoting work items. Call `list_link_roles` before linking or creating a document. Call `list_project_users` before assigning.
 
-## Claude Code (optional)
+## Claude Code and Codex
+
+The Java MCP Server must already be listening. Point either host at the same URL. Polarion Credentials stay in the MCP Server process.
+
+```bash
+claude mcp add --transport http arctic http://127.0.0.1:8080/mcp
+codex mcp add arctic --url http://127.0.0.1:8080/mcp
+```
+
+The Prototype is still a stdio process. To register that instead:
 
 ```bash
 claude mcp add arctic \
@@ -237,10 +260,11 @@ Use your actual repo path on Windows or Unix.
 ## Tests
 
 ```bash
+./gradlew test
 cd prototype && uv run pytest
 ```
 
-Tests mock Polarion HTTP; they do not need a live server. They cover the Python Polarion Client and Arctic CLI, not the Java MCP Server.
+Java tests mock Polarion HTTP. One test boots the MCP Server on an ephemeral loopback port and calls `whoami` over Streamable HTTP. Python tests mock Polarion HTTP as well. Neither suite needs a live Polarion server.
 
 ## Roadmap
 

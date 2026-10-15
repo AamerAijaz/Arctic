@@ -37,6 +37,6 @@ public class PolarionConfiguration {
 
     @Bean
     public ToolCallbackProvider arcticTools(WhoamiTool whoami) {
-        return MethodToolCallbackProvider.builder().toolObjects(whoami).build();
+        return new ToolCallLogging(MethodToolCallbackProvider.builder().toolObjects(whoami).build());
     }
 }

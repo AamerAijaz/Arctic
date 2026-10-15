@@ -5,8 +5,8 @@ Arctic connects Polarion ALM to AI assistants through an MCP Server. Credentials
 ## Language
 
 **MCP Server**:
-The stdio process a host such as Cursor launches so an assistant can call Polarion tools. The on-the-wire server name is `arctic`.
-_Avoid_: the repo, packages repository
+The local process that exposes Polarion tools to hosts. A person starts it; hosts connect to it. The on-the-wire server name is `arctic`.
+_Avoid_: the repo, a process each host launches
 
 **Polarion Client**:
 The component that speaks Polarion's REST API. Tools never see the personal access token.

@@ -1,5 +1,3 @@
-import org.springframework.boot.gradle.tasks.run.BootRun
-
 plugins {
     java
     id("org.springframework.boot") version "4.1.1"
@@ -21,16 +19,11 @@ repositories {
 dependencies {
     implementation(platform("org.springframework.ai:spring-ai-bom:2.0.1"))
     implementation(platform("org.springframework.boot:spring-boot-dependencies:4.1.1"))
-    implementation("org.springframework.ai:spring-ai-starter-mcp-server")
+    implementation("org.springframework.ai:spring-ai-starter-mcp-server-webmvc")
     implementation("org.springframework:spring-web")
     testImplementation("org.springframework.boot:spring-boot-starter-test:4.1.1")
 }
 
 tasks.withType<Test> {
     useJUnitPlatform()
-}
-
-// Gradle does not attach stdin by default; stdio MCP exits on EOF without this.
-tasks.named<BootRun>("bootRun") {
-    standardInput = System.`in`
 }

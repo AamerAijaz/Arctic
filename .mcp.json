@@ -4,6 +4,9 @@
       "type": "stdio",
       "command": "uv",
       "args": ["run", "--project", "prototype", "mcp-polarion"]
+    },
+    "arctic": {
+      "url": "http://127.0.0.1:8080/mcp"
     }
   }
 }

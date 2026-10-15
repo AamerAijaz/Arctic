@@ -1,14 +1,17 @@
+server:
+  address: 127.0.0.1
+  port: 8080
+
 spring:
   main:
     banner-mode: off
-    web-application-type: none
   ai:
     mcp:
       server:
         name: arctic
         version: 0.1.0
         type: SYNC
-        stdio: true
+        protocol: STREAMABLE
 
 logging:
   level:
