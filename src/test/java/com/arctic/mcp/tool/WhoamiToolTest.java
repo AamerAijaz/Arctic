@@ -17,10 +17,11 @@ import com.arctic.mcp.polarion.CurrentUser;
 import com.arctic.mcp.polarion.PolarionClient;
 import com.arctic.mcp.polarion.PolarionCredentials;
 import com.arctic.mcp.polarion.PolarionCredentialsSource;
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
-import java.io.IOException;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -162,10 +163,7 @@ class WhoamiToolTest {
     @Test
     void whoamiIsExposedWithNoTokenArgument() {
         Harness harness = harness();
-        ToolCallback[] tools = new PolarionConfiguration().arcticTools(harness.tool).getToolCallbacks();
-
-        assertEquals(1, tools.length);
-        ToolDefinition definition = tools[0].getToolDefinition();
+        ToolDefinition definition = whoami(harness).getToolDefinition();
         assertEquals("whoami", definition.name());
         assertEquals(
                 """
@@ -188,7 +186,7 @@ class WhoamiToolTest {
                         {"data":{"type":"users","id":"bob","attributes":{"name":"Bob"}}}
                         """,
                         MediaType.APPLICATION_JSON));
-        ToolCallback tool = new PolarionConfiguration().arcticTools(harness.tool).getToolCallbacks()[0];
+        ToolCallback tool = whoami(harness);
 
         String json = tool.call("{}");
 
@@ -197,14 +195,30 @@ class WhoamiToolTest {
         assertFalse(json.contains(TOKEN));
     }
 
+    private static ToolCallback whoami(Harness harness) {
+        ToolCallback[] tools = new PolarionConfiguration()
+                .arcticTools(
+                        harness.tool,
+                        new ProjectTools(harness.client),
+                        new WorkItemTools(harness.client),
+                        new LinkTools(harness.client),
+                        new DocumentTools(harness.client),
+                        new UserTools(harness.client))
+                .getToolCallbacks();
+        return Arrays.stream(tools)
+                .filter(tool -> "whoami".equals(tool.getToolDefinition().name()))
+                .findFirst()
+                .orElseThrow();
+    }
+
     private static Harness harness() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         PolarionCredentialsSource source = () -> new PolarionCredentials(
                 "https://polarion.example.com/polarion/rest/v1", TOKEN);
         PolarionClient client = new PolarionClient(source, builder.build());
-        return new Harness(server, new WhoamiTool(client));
+        return new Harness(server, client, new WhoamiTool(client));
     }
 
-    private record Harness(MockRestServiceServer server, WhoamiTool tool) {}
+    private record Harness(MockRestServiceServer server, PolarionClient client, WhoamiTool tool) {}
 }

@@ -1,0 +1,243 @@
+package com.arctic.mcp.tool;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+
+import com.arctic.mcp.polarion.PolarionResources.CreatedDocument;
+import com.arctic.mcp.polarion.PolarionResources.CreatedDocumentWorkItem;
+import com.arctic.mcp.polarion.PolarionResources.Document;
+import com.arctic.mcp.polarion.PolarionResources.DocumentCreatePreview;
+import com.arctic.mcp.polarion.PolarionResources.DocumentPart;
+import com.arctic.mcp.polarion.PolarionResources.DocumentPartDeletePreview;
+import com.arctic.mcp.polarion.PolarionResources.DocumentPartMovePreview;
+import com.arctic.mcp.polarion.PolarionResources.DocumentWorkItemCreatePreview;
+import com.arctic.mcp.polarion.ProjectAllowlist;
+import java.util.List;
+import java.util.Map;
+import org.hamcrest.Matchers;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+
+class DocumentToolsTest {
+
+    @Test
+    void listDocumentsBuildsAPortalUrlThatOmitsTheDefaultSpace() {
+        PolarionHttp http = PolarionHttp.open();
+        http.server
+                .expect(requestTo(Matchers.startsWith(PolarionHttp.ROOT + "/projects/ELK/spaces/_default/documents?")))
+                .andRespond(withSuccess(
+                        """
+                        {"data":[{"type":"documents","id":"ELK/_default/Specs","attributes":{"moduleName":"Specs","title":"Specifications","type":"req_specification"}}]}
+                        """,
+                        MediaType.APPLICATION_JSON));
+
+        Document document = new DocumentTools(http.client).listDocuments("ELK", null, null, null).documents().get(0);
+
+        assertEquals("Specs", document.moduleName());
+        assertEquals("https://polarion.example.com/polarion/#/project/ELK/wiki/Specs", document.portalUrl());
+        assertNull(document.contentSummary());
+        http.server.verify();
+    }
+
+    @Test
+    void getDocumentStripsAndCapsTheHomePageSummary() {
+        PolarionHttp http = PolarionHttp.open();
+        String longText = "a".repeat(450);
+        http.server
+                .expect(requestTo(PolarionHttp.ROOT + "/projects/ELK/spaces/_default/documents/Specs?fields%5Bdocuments%5D=id%2CmoduleName%2Ctitle%2Ctype%2Cstatus%2ChomePageContent"))
+                .andRespond(withSuccess(
+                        """
+                        {"data":{"type":"documents","id":"ELK/_default/Specs","attributes":{"moduleName":"Specs","homePageContent":{"type":"text/html","value":"<p>%s</p>"}},"links":{"portal":"https://example.test/portal"}}}
+                        """.formatted(longText),
+                        MediaType.APPLICATION_JSON));
+
+        Document document = new DocumentTools(http.client).getDocument("ELK", "Specs", null);
+
+        assertEquals("https://example.test/portal", document.portalUrl());
+        assertEquals(400, document.contentSummary().length());
+        assertEquals("a".repeat(400), document.contentSummary());
+        http.server.verify();
+    }
+
+    @Test
+    void missingDocumentIsNamedInTheError() {
+        PolarionHttp http = PolarionHttp.open();
+        http.server
+                .expect(requestTo(Matchers.startsWith(PolarionHttp.ROOT + "/projects/ELK/spaces/_default/documents/missing")))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND).body("{\"errors\":[{\"title\":\"Not Found\"}]}"));
+
+        RuntimeException error =
+                assertThrows(RuntimeException.class, () -> new DocumentTools(http.client).getDocument("ELK", "missing", null));
+
+        assertEquals("Polarion request failed (404): Document not found: ELK/_default/missing", error.getMessage());
+    }
+
+    @Test
+    void listDocumentPartsStripsHtmlAndKeepsTheWorkItemId() {
+        PolarionHttp http = PolarionHttp.open();
+        http.server
+                .expect(requestTo(Matchers.startsWith(PolarionHttp.ROOT + "/projects/ELK/spaces/_default/documents/Specs/parts?")))
+                .andRespond(withSuccess(
+                        """
+                        {"data":[{"type":"document_parts","id":"ELK/_default/Specs/heading_1","attributes":{"type":"heading","level":1,"content":{"type":"text/html","value":"<p>Body</p>"}},
+                          "relationships":{"workItem":{"data":{"type":"workitems","id":"ELK/ELK-5"}}}}]}
+                        """,
+                        MediaType.APPLICATION_JSON));
+
+        DocumentPart part = new DocumentTools(http.client).listDocumentParts("ELK", "Specs", null, null, null).parts().get(0);
+
+        assertEquals("heading", part.partType());
+        assertEquals(1, part.level());
+        assertEquals("Body", part.text());
+        assertEquals("ELK/ELK-5", part.workItemId());
+    }
+
+    @Test
+    void createDocumentDryRunOmitsAnEmptyHomePage() {
+        PolarionHttp http = PolarionHttp.open();
+
+        DocumentCreatePreview preview = (DocumentCreatePreview) new DocumentTools(http.client)
+                .createDocument("ELK", "Bare", "req", "parent", null, "", null, null);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> attributes =
+                (Map<String, Object>) ((Map<?, ?>) ((List<?>) preview.body().get("data")).get(0)).get("attributes");
+        assertEquals("Bare", attributes.get("moduleName"));
+        assertFalse(attributes.containsKey("homePageContent"));
+        assertEquals("_default", preview.spaceId());
+        http.server.verify();
+    }
+
+    @Test
+    void createDocumentApplyReturnsAPortalUrl() {
+        PolarionHttp http = PolarionHttp.open();
+        http.server
+                .expect(requestTo(PolarionHttp.ROOT + "/projects/ELK/spaces/_default/documents"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(
+                        """
+                        {"data":[{"type":"documents","id":"ELK/_default/Specs"}]}
+                        """,
+                        MediaType.APPLICATION_JSON));
+
+        CreatedDocument created = (CreatedDocument)
+                new DocumentTools(http.client).createDocument("ELK", "Specs", "req", "parent", "Specifications", null, null, false);
+
+        assertEquals("ELK/_default/Specs", created.id());
+        assertEquals("https://polarion.example.com/polarion/#/project/ELK/wiki/Specs", created.portalUrl());
+        http.server.verify();
+    }
+
+    @Test
+    void moveAndDeleteDryRunsDoNotCallPolarion() {
+        PolarionHttp http = PolarionHttp.open();
+        DocumentTools tools = new DocumentTools(http.client);
+
+        DocumentPartMovePreview move =
+                (DocumentPartMovePreview) tools.moveDocumentPart("ELK", "Specs", "heading_1", "part-2", null, null, null, null);
+        DocumentPartDeletePreview delete =
+                (DocumentPartDeletePreview) tools.deleteDocumentParts("ELK", "Specs", List.of("text_1"), null, null);
+
+        assertTrue(move.path().endsWith("/parts/heading_1/actions/move"));
+        assertEquals("part-2", move.body().get("after"));
+        assertTrue(delete.path().endsWith("/documents/Specs/parts"));
+        http.server.verify();
+    }
+
+    @Test
+    void createDocumentWorkItemDryRunSendsNeitherPost() {
+        PolarionHttp http = PolarionHttp.open();
+
+        DocumentWorkItemCreatePreview preview = (DocumentWorkItemCreatePreview) new DocumentTools(http.client)
+                .createDocumentWorkItem(
+                        "ELK", "Specs", "requirement", "REQ-1", null, "<p>Text</p>", null, null, null, "heading_1", null, null);
+
+        assertTrue(preview.dryRun());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> entry = (Map<String, Object>) ((List<?>) preview.workItemBody().get("data")).get(0);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> module = (Map<String, Object>) ((Map<?, ?>) entry.get("relationships")).get("module");
+        assertEquals("ELK/_default/Specs", ((Map<?, ?>) module.get("data")).get("id"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> relationships =
+                (Map<String, Object>) ((Map<?, ?>) ((List<?>) preview.partBody().get("data")).get(0)).get("relationships");
+        assertFalse(relationships.containsKey("workItem"));
+        assertEquals("heading_1", ((Map<?, ?>) ((Map<?, ?>) relationships.get("previousPart")).get("data")).get("id"));
+        http.server.verify();
+    }
+
+    @Test
+    void createDocumentWorkItemRejectsBothPreviousAndNext() {
+        PolarionHttp http = PolarionHttp.open();
+
+        RuntimeException error = assertThrows(
+                RuntimeException.class,
+                () -> new DocumentTools(http.client)
+                        .createDocumentWorkItem("ELK", "Specs", "requirement", "REQ-1", null, null, null, null, null, "a", "b", null));
+
+        assertEquals("Specify only one of previous_part or next_part.", error.getMessage());
+        http.server.verify();
+    }
+
+    @Test
+    void createDocumentWorkItemApplyPostsTheWorkItemThenThePart() {
+        PolarionHttp http = PolarionHttp.open();
+        http.server
+                .expect(requestTo(PolarionHttp.ROOT + "/projects/ELK/workitems"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(
+                        """
+                        {"data":[{"type":"workitems","id":"ELK/ELK-9","links":{"portal":"https://example.test/wi"}}]}
+                        """,
+                        MediaType.APPLICATION_JSON));
+        http.server
+                .expect(requestTo(PolarionHttp.ROOT + "/projects/ELK/spaces/_default/documents/Specs/parts"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(
+                        """
+                        {"data":[{"type":"document_parts","id":"ELK/_default/Specs/workitem_ELK-9"}]}
+                        """,
+                        MediaType.APPLICATION_JSON));
+
+        CreatedDocumentWorkItem created = (CreatedDocumentWorkItem) new DocumentTools(http.client)
+                .createDocumentWorkItem("ELK", "Specs", "requirement", "REQ-1", null, null, null, null, null, "heading_1", null, false);
+
+        assertEquals("ELK/ELK-9", created.id());
+        assertEquals("ELK/_default/Specs/workitem_ELK-9", created.partId());
+        assertEquals("https://example.test/wi", created.portalUrl());
+        http.server.verify();
+    }
+
+    @Test
+    void disallowedProjectIsRefused() {
+        PolarionHttp http = PolarionHttp.open(ProjectAllowlist.parse("ELK"));
+
+        RuntimeException error =
+                assertThrows(RuntimeException.class, () -> new DocumentTools(http.client).listDocuments("OTHER", null, null, null));
+
+        assertTrue(error.getMessage().contains("POLARION_PROJECT_ALLOWLIST"));
+        http.server.verify();
+    }
+
+    @Test
+    void rejectedTokenDoesNotEchoTheToken() {
+        PolarionHttp http = PolarionHttp.open();
+        http.server
+                .expect(requestTo(Matchers.startsWith(PolarionHttp.ROOT + "/projects/ELK/spaces/")))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED).body("{\"errors\":[{\"detail\":\"" + PolarionHttp.TOKEN + "\"}]}"));
+
+        RuntimeException error =
+                assertThrows(RuntimeException.class, () -> new DocumentTools(http.client).listDocuments("ELK", null, null, null));
+
+        assertFalse(error.getMessage().contains(PolarionHttp.TOKEN));
+    }
+}

@@ -2,7 +2,7 @@
 
 Arctic connects Polarion ALM to AI assistants through a custom [Model Context Protocol](https://modelcontextprotocol.io) server. Authentication uses a Polarion personal access token (PAT) configured outside the LLM; tools never accept or return secrets.
 
-A Java 25 / Spring Boot MCP Server is under construction at the repo root. Until that replacement exposes tools, **the live MCP Server is the Python prototype** under [`prototype/`](prototype/). The Arctic CLI is frozen there and is not part of the Java product.
+A Java 25 / Spring Boot MCP Server listens on loopback Streamable HTTP. It exposes the tools below except `upload_work_item_attachment`, `import_document`, `convert_heading_to_work_item`, `list_requirement_blocks`, `convert_headings_to_work_items`, `promote_document_requirements`, and `assign_work_items_round_robin`, which stay on the Prototype under [`prototype/`](prototype/). The Arctic CLI is frozen there and is not part of the Java product.
 
 Today the stack supports:
 
@@ -38,8 +38,8 @@ Word files use Polarion's REST `importWordDocument` action (native LiveDoc conve
 
 | Path | Role |
 |------|------|
-| [`src/main/java/com/arctic/mcp`](src/main/java/com/arctic/mcp) | Java MCP Server (Spring Boot, Streamable HTTP on `127.0.0.1:8080`, `whoami`) |
-| [`prototype/`](prototype/) | Frozen Python uv workspace; **live** MCP Server (`mcp-polarion`) |
+| [`src/main/java/com/arctic/mcp`](src/main/java/com/arctic/mcp) | Java MCP Server (Spring Boot, Streamable HTTP on `127.0.0.1:8080`) |
+| [`prototype/`](prototype/) | Frozen Python Prototype (`mcp-polarion`); still hosts the tools the Java server does not expose |
 | [`prototype/packages/arctic`](prototype/packages/arctic) | Frozen Arctic CLI (not ported) |
 | [`.mcp.json`](.mcp.json) | MCP config: Java `arctic` is a loopback URL; the Prototype stays stdio |
 | [`.env.example`](.env.example) | Template for local credentials |
@@ -47,7 +47,7 @@ Word files use Polarion's REST `importWordDocument` action (native LiveDoc conve
 ## Prerequisites
 
 - **Java 25** (LTS) — for the MCP Server (`./gradlew bootRun`)
-- **[uv](https://docs.astral.sh/uv/)** — installs Python 3.12 and the prototype (live MCP Server)
+- **[uv](https://docs.astral.sh/uv/)** — installs Python 3.12 and the Prototype
 - A **Polarion** instance with the **REST API enabled**
 - A **personal access token** for a Polarion user who can access the projects you care about
 
@@ -80,7 +80,7 @@ API calls run as that user (permissions, author, audit). Prefer each person’s 
 
 ## Install
 
-From the repository root, sync the Python prototype (the live MCP Server):
+From the repository root, sync the Python Prototype:
 
 ```bash
 uv sync --project prototype --all-packages --group dev

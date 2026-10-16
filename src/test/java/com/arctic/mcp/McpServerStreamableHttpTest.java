@@ -1,5 +1,6 @@
 package com.arctic.mcp;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -18,6 +19,8 @@ import io.modelcontextprotocol.spec.McpSchema.ListToolsResult;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
 import java.net.InetAddress;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.apache.catalina.connector.Connector;
 import org.apache.coyote.AbstractProtocol;
 import org.junit.jupiter.api.Test;
@@ -76,6 +79,32 @@ class McpServerStreamableHttpTest {
                 .build()) {
             client.initialize();
             ListToolsResult listed = client.listTools();
+            assertEquals(
+                    Set.of(
+                            "whoami",
+                            "list_projects",
+                            "get_project",
+                            "list_work_items",
+                            "get_work_item",
+                            "create_work_item",
+                            "update_work_item",
+                            "list_work_item_types",
+                            "create_work_item_type",
+                            "list_link_roles",
+                            "list_work_item_links",
+                            "list_work_item_backlinks",
+                            "create_work_item_link",
+                            "delete_work_item_link",
+                            "list_documents",
+                            "get_document",
+                            "create_document",
+                            "list_document_parts",
+                            "move_document_part",
+                            "delete_document_parts",
+                            "create_document_work_item",
+                            "list_project_users",
+                            "assign_work_item"),
+                    listed.tools().stream().map(Tool::name).collect(Collectors.toSet()));
             Tool whoami = listed.tools().stream()
                     .filter(tool -> "whoami".equals(tool.name()))
                     .findFirst()

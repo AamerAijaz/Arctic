@@ -24,6 +24,10 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-test:4.1.1")
 }
 
+tasks.withType<JavaCompile> {
+    options.compilerArgs.add("-parameters")
+}
+
 tasks.withType<Test> {
     useJUnitPlatform()
 }
