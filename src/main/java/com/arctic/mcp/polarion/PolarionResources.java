@@ -114,6 +114,14 @@ public final class PolarionResources {
             @JsonProperty("space_id") String spaceId,
             Map<String, Object> body) {}
 
+    public record DocumentImportPreview(
+            @JsonProperty("dry_run") boolean dryRun,
+            @JsonProperty("project_id") String projectId,
+            @JsonProperty("space_id") String spaceId,
+            String path,
+            Map<String, String> parameters,
+            String filename) {}
+
     public record DocumentPart(
             String id,
             @JsonProperty("part_type") String partType,

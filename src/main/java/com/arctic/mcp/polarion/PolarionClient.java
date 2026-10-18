@@ -9,6 +9,7 @@ import static com.arctic.mcp.polarion.PolarionResources.DeletedWorkItemLink;
 import static com.arctic.mcp.polarion.PolarionResources.CreatedWorkItemType;
 import static com.arctic.mcp.polarion.PolarionResources.Document;
 import static com.arctic.mcp.polarion.PolarionResources.DocumentCreatePreview;
+import static com.arctic.mcp.polarion.PolarionResources.DocumentImportPreview;
 import static com.arctic.mcp.polarion.PolarionResources.DocumentPart;
 import static com.arctic.mcp.polarion.PolarionResources.DocumentPartDeletePreview;
 import static com.arctic.mcp.polarion.PolarionResources.DocumentPartDeleteResult;
@@ -31,6 +32,9 @@ import static com.arctic.mcp.polarion.PolarionResources.WorkItemUpdatePreview;
 
 import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -38,10 +42,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.MultipartBodyBuilder;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import tools.jackson.core.type.TypeReference;
@@ -66,6 +74,8 @@ public final class PolarionClient {
     private static final String DOCUMENT_PART_FIELDS = "id,type,level,headingText,content,workItem";
     private static final String USER_FIELDS = "id,name,email,projectRoles";
     private static final int CONTENT_SUMMARY_LEN = 400;
+    private static final MediaType WORD_DOCUMENT = MediaType.parseMediaType(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     private static final TypeReference<List<LinkedHashMap<String, Object>>> OPTION_LIST =
             new TypeReference<>() {};
     private static final TypeReference<List<LinkedHashMap<String, Object>>> RULE_LIST = new TypeReference<>() {};
@@ -384,6 +394,65 @@ public final class PolarionClient {
         return parseCreatedDocument(payload, credentials.get().restRoot(), projectId, space, moduleName);
     }
 
+    public Object importWordDocument(
+            String projectId,
+            String filePath,
+            String moduleName,
+            String documentType,
+            String title,
+            String spaceId,
+            boolean dryRun) {
+        allowlist.assertAllowed(projectId);
+        String space = space(spaceId);
+        Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put("documentName", moduleName);
+        parameters.put("documentType", documentType);
+        parameters.put("title", title);
+        String path = documentsPath(projectId, space) + "/actions/importWordDocument";
+        Path file = Path.of(filePath);
+        String filename = file.getFileName().toString();
+        if (dryRun) {
+            return new DocumentImportPreview(true, projectId, space, path, Map.copyOf(parameters), filename);
+        }
+        byte[] content = readWordFile(file);
+        MultipartBodyBuilder multipart = new MultipartBodyBuilder();
+        multipart.part("parameters", writeJson(parameters));
+        multipart.part("file", new ByteArrayResource(content) {
+                    @Override
+                    public String getFilename() {
+                        return filename;
+                    }
+                })
+                .contentType(WORD_DOCUMENT);
+        PolarionJob job = parseJob(exchangeMultipart(path, multipart.build()), "job");
+        Instant deadline = Instant.now().plusSeconds(120);
+        while (!job.terminal()) {
+            if (Instant.now().isAfter(deadline)) {
+                throw new PolarionApiException(504, "Timed out waiting for Polarion job " + job.id());
+            }
+            job = parseJob(
+                    exchange(
+                            HttpMethod.GET,
+                            "/jobs/" + segment(job.id()),
+                            Map.of("fields[jobs]", "id,name,state,status"),
+                            null,
+                            null),
+                    "job");
+            if (!job.terminal()) {
+                waitForJob();
+            }
+        }
+        if (job.failed()) {
+            String detail = job.message() == null || job.message().isBlank()
+                    ? "Job " + job.id() + " failed"
+                    : job.message();
+            throw new PolarionApiException(500, detail);
+        }
+        return new CreatedDocument(
+                projectId + "/" + space + "/" + moduleName,
+                documentPortalUrl(credentials.get().restRoot(), projectId, space, moduleName));
+    }
+
     public List<DocumentPart> listDocumentParts(
             String projectId, String documentName, String spaceId, Integer pageSize, Integer pageNumber) {
         allowlist.assertAllowed(projectId);
@@ -571,6 +640,50 @@ public final class PolarionClient {
             links.add(parseWorkItemLink(item, titles));
         }
         return List.copyOf(links);
+    }
+
+    private String exchangeMultipart(String path, MultiValueMap<String, HttpEntity<?>> body) {
+        PolarionCredentials current = credentials.get();
+        String url = url(current.restRoot(), path, Map.of());
+        try {
+            return http.method(HttpMethod.POST)
+                    .uri(URI.create(url))
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + current.token())
+                    .accept(MediaType.APPLICATION_JSON)
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .body(body)
+                    .exchange((request, response) -> read(response.getStatusCode(), body(response), current.token(), null));
+        } catch (RestClientException exception) {
+            throw new PolarionUnavailableException(
+                    "Could not reach Polarion: " + redact(String.valueOf(exception.getMessage()), current.token()));
+        }
+    }
+
+    private static byte[] readWordFile(Path file) {
+        try {
+            return Files.readAllBytes(file);
+        } catch (IOException exception) {
+            throw new PolarionException("Word file not found: " + file);
+        }
+    }
+
+    private PolarionJob parseJob(String body, String label) {
+        JsonNode data = tree(body, label).get("data");
+        JsonNode item = data != null && data.isArray() ? (data.isEmpty() ? null : data.get(0)) : data;
+        if (item == null || !item.isObject()) {
+            throw new PolarionException("Polarion returned an unexpected job response.");
+        }
+        String id = textOrNull(item.get("id"));
+        if (id == null || id.isBlank()) {
+            throw new PolarionException("Polarion job response had no id.");
+        }
+        JsonNode attributes = item.get("attributes");
+        JsonNode status = attributes == null ? null : attributes.get("status");
+        return new PolarionJob(
+                id,
+                attributes == null ? null : textOrNull(attributes.get("state")),
+                status == null || !status.isObject() ? null : textOrNull(status.get("type")),
+                status == null || !status.isObject() ? null : textOrNull(status.get("message")));
     }
 
     private String exchange(
@@ -1218,6 +1331,61 @@ public final class PolarionClient {
             cleaned = cleaned.replace(token, "[redacted]");
         }
         return cleaned;
+    }
+
+    private static void waitForJob() {
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new PolarionException("Interrupted while waiting for Polarion job.");
+        }
+    }
+
+    private record PolarionJob(String id, String state, String statusType, String message) {
+        private boolean terminal() {
+            return failed() || succeeded();
+        }
+
+        private boolean succeeded() {
+            if (failed() || running()) {
+                return false;
+            }
+            boolean done = oneOf(jobState(), "FINISHED", "DONE");
+            if (status().equals("OK")) {
+                return done || statusType != null && (state == null || state.isBlank());
+            }
+            return done && status().isEmpty();
+        }
+
+        private boolean failed() {
+            if (oneOf(status(), "FAILED", "CANCELLED", "ABORTED", "ERROR")
+                    || oneOf(jobState(), "FAILED", "CANCELLED", "ABORTED")) {
+                return true;
+            }
+            return oneOf(jobState(), "FINISHED", "DONE") && !status().isEmpty() && !status().equals("OK");
+        }
+
+        private boolean running() {
+            return jobState().equals("RUNNING");
+        }
+
+        private String status() {
+            return statusType == null ? "" : statusType.toUpperCase();
+        }
+
+        private String jobState() {
+            return state == null ? "" : state.toUpperCase();
+        }
+
+        private static boolean oneOf(String value, String... options) {
+            for (String option : options) {
+                if (value.equals(option)) {
+                    return true;
+                }
+            }
+            return false;
+        }
     }
 
     /** Encodes one path segment without pulling a second URI builder into every call. */

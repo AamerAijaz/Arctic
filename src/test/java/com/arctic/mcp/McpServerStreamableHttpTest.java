@@ -98,6 +98,7 @@ class McpServerStreamableHttpTest {
                             "list_documents",
                             "get_document",
                             "create_document",
+                            "import_document",
                             "list_document_parts",
                             "move_document_part",
                             "delete_document_parts",

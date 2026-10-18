@@ -56,6 +56,17 @@ public final class DocumentTools {
 
     static final String DELETE_PARTS = "Delete LiveDoc parts (typically leftover plain-text paragraphs).";
 
+    static final String IMPORT_DOCUMENT =
+            """
+            Import a Word file (.docx) as a Polarion LiveDoc.
+
+            Posts the file to Polarion's Word import so the LiveDoc keeps the
+            source document's contents, sections, tables, images, and formatting,
+            including material that is not a requirement. Default dry_run=true
+            only returns the import preview; set dry_run=false to create the
+            LiveDoc. `portal_url` in the applied result opens it.\
+            """;
+
     static final String CREATE_DOCUMENT_WORK_ITEM =
             """
             Create a work item and embed it in a LiveDoc as a document part.
@@ -118,6 +129,29 @@ public final class DocumentTools {
                     structure_link_role,
                     title,
                     home_page_content,
+                    space_id,
+                    ToolSupport.dryRun(dry_run));
+        } catch (PolarionException exception) {
+            throw ToolSupport.failed(exception);
+        }
+    }
+
+    @Tool(name = "import_document", description = IMPORT_DOCUMENT)
+    public Object importDocument(
+            String project_id,
+            String file_path,
+            String module_name,
+            String document_type,
+            String title,
+            @ToolParam(required = false) String space_id,
+            @ToolParam(required = false) Boolean dry_run) {
+        try {
+            return client.importWordDocument(
+                    project_id,
+                    file_path,
+                    module_name,
+                    document_type,
+                    title,
                     space_id,
                     ToolSupport.dryRun(dry_run));
         } catch (PolarionException exception) {

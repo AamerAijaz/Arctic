@@ -2,7 +2,7 @@
 
 Arctic connects Polarion ALM to AI assistants through a custom [Model Context Protocol](https://modelcontextprotocol.io) server. Authentication uses a Polarion personal access token (PAT) configured outside the LLM; tools never accept or return secrets.
 
-A Java 25 / Spring Boot MCP Server listens on loopback Streamable HTTP. It exposes the tools below except `upload_work_item_attachment`, `import_document`, `convert_heading_to_work_item`, `list_requirement_blocks`, `convert_headings_to_work_items`, `promote_document_requirements`, and `assign_work_items_round_robin`, which stay on the Prototype under [`prototype/`](prototype/). The Arctic CLI is frozen there and is not part of the Java product.
+A Java 25 / Spring Boot MCP Server listens on loopback Streamable HTTP. It exposes the tools below except `upload_work_item_attachment`, `convert_heading_to_work_item`, `list_requirement_blocks`, `convert_headings_to_work_items`, `promote_document_requirements`, and `assign_work_items_round_robin`, which stay on the Prototype under [`prototype/`](prototype/). The Arctic CLI is frozen there and is not part of the Java product.
 
 Today the stack supports:
 
@@ -22,7 +22,7 @@ Today the stack supports:
 - **`list_document_parts`** — headings, text, and embedded work items in a document (`work_item_id` when Polarion linked the part)
 - **`convert_heading_to_work_item`** — change a heading work item's type in place (`dry_run` by default)
 - **`create_document_work_item`** — create a work item in a document (`dry_run` by default)
-- **`import_document`** — parse Word (`.docx`) or ReqIF (`.reqif` / `.reqifz`) locally and create a LiveDoc (`dry_run` shows the mapping preview; `--apply` creates data in Polarion)
+- **`import_document`** — import a Word file (`.docx`) as a LiveDoc through Polarion's Word import (`dry_run` by default). The LiveDoc keeps the source document's contents, sections, tables, images, and formatting, including material that is not a requirement
 - **`list_project_users`** — users with a project role (default `project_assignable`)
 - **`assign_work_item`** — replace the assignee list on a work item (`dry_run` by default)
 - **`list_requirement_blocks`** — parse H2 requirement blocks under H1 sections after import
@@ -32,7 +32,7 @@ Today the stack supports:
 
 Polarion **requirements are work items** (type ids such as `requirement` or `systemrequirement`). Linking a task to a requirement uses `create_work_item_link`. Requirements can also live in **LiveDocs**; use document commands to list, create, import, or add in-document work items.
 
-Word files use Polarion's REST `importWordDocument` action (native LiveDoc conversion on the server). ReqIF is still parsed locally. Without `--apply`, `import-document` prints a JSON preview. With `--apply`, Arctic starts the Polarion import job; `portal_url` in the output is the Polarion wiki editor for that module.
+Word files on the MCP Server use Polarion's REST `importWordDocument` action (native LiveDoc conversion on the server). `import_document` defaults to `dry_run=true` and returns the import preview. Set `dry_run=false` to start the Polarion import job; `portal_url` in the result opens the LiveDoc. ReqIF is still parsed locally by the Prototype.
 
 ## Repository layout
 
@@ -233,7 +233,7 @@ Reload MCP in Cursor after the Java MCP Server is listening. Example prompts:
 - *Dry-run importing this attached .docx as a LiveDoc in ELK, then show the preview URL after apply.*
 - *Import `/path/on/host/spec.docx` into ELK with `import_document` (dry_run first), then `promote_document_requirements` on module Specs with sections Functional, Physical, Power, Performance, Non-Functional and type hardware (dry_run first).*
 
-Word import needs a filesystem path the MCP **host** can read (for example the repo root on your machine). Browsers and chat UIs do not upload the `.docx` through MCP; put the file where the `mcp-polarion` process can open it and pass that path to `import_document`.
+Word import needs a filesystem path the MCP Server can read (for example the repo root on your machine). Browsers and chat UIs do not upload the `.docx` through MCP; put the file where the server process can open it and pass that path to `import_document`.
 
 The `whoami` and `list_projects` tools return ids and names, not the token. `create_work_item`, `create_work_item_type`, `update_work_item`, `create_work_item_link`, `delete_work_item_link`, `create_document`, `create_document_work_item`, `convert_heading_to_work_item`, `convert_headings_to_work_items`, `import_document`, `promote_document_requirements`, `assign_work_item`, and `assign_work_items_round_robin` default to `dry_run=true`; only set `dry_run=false` when you intend to create or change data. `list_requirement_blocks` is read-only. Call `list_work_item_types` before creating or promoting work items. Call `list_link_roles` before linking or creating a document. Call `list_project_users` before assigning.
 

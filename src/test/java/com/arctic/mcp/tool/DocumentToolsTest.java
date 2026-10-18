@@ -11,16 +11,23 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.arctic.mcp.polarion.PolarionResources.CreatedDocument;
+import com.arctic.mcp.polarion.PolarionResources.CreatedWorkItem;
 import com.arctic.mcp.polarion.PolarionResources.CreatedDocumentWorkItem;
 import com.arctic.mcp.polarion.PolarionResources.Document;
 import com.arctic.mcp.polarion.PolarionResources.DocumentCreatePreview;
+import com.arctic.mcp.polarion.PolarionResources.DocumentImportPreview;
 import com.arctic.mcp.polarion.PolarionResources.DocumentPart;
 import com.arctic.mcp.polarion.PolarionResources.DocumentPartDeletePreview;
 import com.arctic.mcp.polarion.PolarionResources.DocumentPartMovePreview;
 import com.arctic.mcp.polarion.PolarionResources.DocumentWorkItemCreatePreview;
+import com.arctic.mcp.polarion.PolarionResources.RequirementWorkItemPreview;
 import com.arctic.mcp.polarion.ProjectAllowlist;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -214,6 +221,200 @@ class DocumentToolsTest {
         assertEquals("ELK/ELK-9", created.id());
         assertEquals("ELK/_default/Specs/workitem_ELK-9", created.partId());
         assertEquals("https://example.test/wi", created.portalUrl());
+        http.server.verify();
+    }
+
+    @Test
+    void importDocumentDryRunDoesNotCreateALiveDoc() {
+        PolarionHttp http = PolarionHttp.open();
+
+        DocumentImportPreview preview = (DocumentImportPreview) new DocumentTools(http.client)
+                .importDocument(
+                        "ELK",
+                        "C:\\docs\\spec.docx",
+                        "Spec",
+                        "req_specification",
+                        "Specifications",
+                        null,
+                        null);
+
+        assertTrue(preview.dryRun());
+        assertEquals("spec.docx", preview.filename());
+        assertEquals(
+                "/projects/ELK/spaces/_default/documents/actions/importWordDocument", preview.path());
+        assertEquals("Spec", preview.parameters().get("documentName"));
+        assertEquals("req_specification", preview.parameters().get("documentType"));
+        assertEquals("Specifications", preview.parameters().get("title"));
+        http.server.verify();
+    }
+
+    @Test
+    void importDocumentSendsTheWordFileAndReturnsTheLiveDocLink(@TempDir Path dir) throws Exception {
+        byte[] docx = new byte[] {0x50, 0x4b, 0x03, 0x04, 't', 'a', 'b', 'l', 'e'};
+        Path file = dir.resolve("spec.docx");
+        Files.write(file, docx);
+        PolarionHttp http = PolarionHttp.open();
+        http.server
+                .expect(requestTo(PolarionHttp.ROOT + "/projects/ELK/spaces/_default/documents/actions/importWordDocument"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(request -> {
+                    String body = ((MockClientHttpRequest) request).getBodyAsString();
+                    assertTrue(body.contains("spec.docx"), body);
+                    assertTrue(body.contains("table"), body);
+                    assertTrue(body.contains("\"documentName\":\"Spec\""), body);
+                    assertTrue(body.contains("\"documentType\":\"req_specification\""), body);
+                    assertTrue(body.contains("\"title\":\"Specifications\""), body);
+                    assertFalse(body.toLowerCase().contains("application/json"), body);
+                })
+                .andRespond(withStatus(HttpStatus.ACCEPTED)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(
+                                """
+                                {"data":{"type":"jobs","id":"job-1","attributes":{"state":"RUNNING"}}}
+                                """));
+        http.server
+                .expect(requestTo(Matchers.startsWith(PolarionHttp.ROOT + "/jobs/job-1")))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(
+                        """
+                        {"data":{"type":"jobs","id":"job-1","attributes":{"state":"FINISHED","status":{"type":"OK"}}}}
+                        """,
+                        MediaType.APPLICATION_JSON));
+
+        CreatedDocument created = (CreatedDocument) new DocumentTools(http.client)
+                .importDocument("ELK", file.toString(), "Spec", "req_specification", "Specifications", null, false);
+
+        assertEquals("ELK/_default/Spec", created.id());
+        assertEquals("https://polarion.example.com/polarion/#/project/ELK/wiki/Spec", created.portalUrl());
+        http.server.verify();
+    }
+
+    @Test
+    void importDocumentWaitsUntilTheJobSucceeds(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("spec.docx");
+        Files.write(file, new byte[] {0x50, 0x4b});
+        PolarionHttp http = PolarionHttp.open();
+        http.server
+                .expect(requestTo(PolarionHttp.ROOT + "/projects/ELK/spaces/_default/documents/actions/importWordDocument"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.ACCEPTED)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(
+                                """
+                                {"data":{"type":"jobs","id":"job-1","attributes":{"state":"RUNNING"}}}
+                                """));
+        http.server
+                .expect(requestTo(Matchers.startsWith(PolarionHttp.ROOT + "/jobs/job-1")))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(
+                        """
+                        {"data":{"type":"jobs","id":"job-1","attributes":{"state":"RUNNING","status":{"type":"OK"}}}}
+                        """,
+                        MediaType.APPLICATION_JSON));
+        http.server
+                .expect(requestTo(Matchers.startsWith(PolarionHttp.ROOT + "/jobs/job-1")))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(
+                        """
+                        {"data":{"type":"jobs","id":"job-1","attributes":{"state":"FINISHED","status":{"type":"OK"}}}}
+                        """,
+                        MediaType.APPLICATION_JSON));
+
+        CreatedDocument created = (CreatedDocument) new DocumentTools(http.client)
+                .importDocument("ELK", file.toString(), "Spec", "req_specification", "Specifications", null, false);
+
+        assertEquals("https://polarion.example.com/polarion/#/project/ELK/wiki/Spec", created.portalUrl());
+        http.server.verify();
+    }
+
+    @Test
+    void importDocumentDoesNotReturnALinkWhenTheJobFails(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("spec.docx");
+        Files.write(file, new byte[] {0x50, 0x4b});
+        PolarionHttp http = PolarionHttp.open();
+        http.server
+                .expect(requestTo(PolarionHttp.ROOT + "/projects/ELK/spaces/_default/documents/actions/importWordDocument"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.ACCEPTED)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(
+                                """
+                                {"data":{"type":"jobs","id":"job-1","attributes":{"state":"FINISHED","status":{"type":"ERROR","message":"bad docx"}}}}
+                                """));
+
+        RuntimeException error = assertThrows(
+                RuntimeException.class,
+                () -> new DocumentTools(http.client)
+                        .importDocument("ELK", file.toString(), "Spec", "req_specification", "Specifications", null, false));
+
+        assertTrue(error.getMessage().contains("bad docx"), error.getMessage());
+        http.server.verify();
+    }
+
+    @Test
+    void createRequirementWorkItemCopiesPartHtmlAndLeavesTheLiveDoc() {
+        PolarionHttp http = PolarionHttp.open();
+        http.server
+                .expect(requestTo(Matchers.startsWith(PolarionHttp.ROOT + "/projects/ELK/spaces/_default/documents/Specs/parts?")))
+                .andRespond(withSuccess(
+                        """
+                        {"data":[
+                          {"type":"document_parts","id":"ELK/_default/Specs/heading_1","attributes":{"type":"heading","level":2,"headingText":"Button Press"}},
+                          {"type":"document_parts","id":"ELK/_default/Specs/polarion_9","attributes":{"type":"normal","content":{"type":"text/html","value":"<table><tr><td>Keep</td></tr></table><p><b>formatted</b></p><img src=\\"diagram.png\\">"}}}
+                        ]}
+                        """,
+                        MediaType.APPLICATION_JSON));
+        http.server
+                .expect(requestTo(PolarionHttp.ROOT + "/projects/ELK/workitems"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(request -> {
+                    String body = ((MockClientHttpRequest) request).getBodyAsString();
+                    assertTrue(body.contains("<h2>Button Press</h2>"), body);
+                    assertTrue(body.contains("<table><tr><td>Keep</td></tr></table>"), body);
+                    assertTrue(body.contains("<b>formatted</b>"), body);
+                    assertTrue(body.contains("diagram.png"), body);
+                    assertTrue(body.contains("ELK/_default/Specs"), body);
+                    assertFalse(body.contains("Global ID"), body);
+                })
+                .andRespond(withSuccess(
+                        """
+                        {"data":[{"type":"workitems","id":"ELK/ELK-9","links":{"portal":"https://example.test/wi"}}]}
+                        """,
+                        MediaType.APPLICATION_JSON));
+
+        CreatedWorkItem created = (CreatedWorkItem) new DocumentTools(http.client)
+                .createRequirementWorkItem(
+                        "ELK",
+                        "Specs",
+                        "softwarerequirement",
+                        "Button Press",
+                        List.of("heading_1", "polarion_9"),
+                        null,
+                        false);
+
+        assertEquals("ELK/ELK-9", created.id());
+        assertEquals("https://example.test/wi", created.portalUrl());
+        http.server.verify();
+    }
+
+    @Test
+    void createRequirementWorkItemDryRunDoesNotCreate() {
+        PolarionHttp http = PolarionHttp.open();
+        http.server
+                .expect(requestTo(Matchers.startsWith(PolarionHttp.ROOT + "/projects/ELK/spaces/_default/documents/Specs/parts?")))
+                .andRespond(withSuccess(
+                        """
+                        {"data":[
+                          {"type":"document_parts","id":"ELK/_default/Specs/polarion_1","attributes":{"type":"normal","content":{"type":"text/html","value":"<ul><li>One</li></ul>"}}}
+                        ]}
+                        """,
+                        MediaType.APPLICATION_JSON));
+
+        RequirementWorkItemPreview preview = (RequirementWorkItemPreview) new DocumentTools(http.client)
+                .createRequirementWorkItem("ELK", "Specs", "requirement", "List", List.of("polarion_1"), null, null);
+
+        assertTrue(preview.dryRun());
+        assertEquals("<ul><li>One</li></ul>", preview.description());
         http.server.verify();
     }
 
