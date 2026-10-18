@@ -27,3 +27,15 @@ _Avoid_: snapshot, legacy, packages
 **Tool**:
 An MCP capability exposed to the host (`whoami`, `list_projects`, and the rest). Mutating tools default to `dry_run=true`.
 _Avoid_: command, function, endpoint
+
+**Host**:
+The application a person uses to talk to an LLM. It connects to the MCP Server.
+_Avoid_: MCP Host, harness, client
+
+**LLM Credential**:
+The secret the Host uses to call the model. The person supplies it, and the MCP Server never sees it.
+_Avoid_: API key, token
+
+**Conversation**:
+The thread of messages between the person and the LLM in a Host.
+_Avoid_: chat, session, history

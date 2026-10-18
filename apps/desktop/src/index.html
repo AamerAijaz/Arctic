@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Arctic</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #101114;
+        --sidebar: #17191e;
+        --line: #2c3038;
+        --text: #f3f4f6;
+        --muted: #9aa0aa;
+        --accent: #8ea2ff;
+        --person: #2c3868;
+        --card: #1c1f26;
+        --danger-bg: #3a2428;
+        --danger-text: #ffc7c7;
+        font-family: "Segoe UI", sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      body {
+        display: grid;
+        grid-template-columns: 280px minmax(0, 1fr);
+      }
+
+      aside {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        padding: 20px 16px;
+        background: var(--sidebar);
+        border-right: 1px solid var(--line);
+      }
+
+      .brand {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .brand strong { font-size: 18px; letter-spacing: 0.01em; }
+      .brand span, .hint, label { color: var(--muted); font-size: 12px; }
+
+      label { display: flex; flex-direction: column; gap: 6px; }
+
+      input, textarea, button {
+        font: inherit;
+        color: var(--text);
+      }
+
+      input, textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #101114;
+        padding: 10px 12px;
+      }
+
+      input:focus, textarea:focus {
+        outline: 2px solid var(--accent);
+        border-color: transparent;
+      }
+
+      main {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        min-width: 0;
+      }
+
+      header {
+        padding: 16px 24px;
+        border-bottom: 1px solid var(--line);
+        font-size: 14px;
+      }
+
+      #transcript {
+        overflow: auto;
+        padding: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .empty {
+        margin: auto;
+        max-width: 360px;
+        text-align: center;
+        color: var(--muted);
+      }
+
+      .bubble {
+        max-width: min(680px, 85%);
+        padding: 12px 14px;
+        border-radius: 14px;
+        white-space: pre-wrap;
+        line-height: 1.45;
+      }
+
+      .person {
+        align-self: flex-end;
+        background: var(--person);
+      }
+
+      .assistant {
+        align-self: flex-start;
+        background: var(--card);
+        border: 1px solid var(--line);
+      }
+
+      .failure {
+        align-self: stretch;
+        background: var(--danger-bg);
+        color: var(--danger-text);
+      }
+
+      #composer {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: end;
+        margin: 0 24px 20px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: #16181d;
+      }
+
+      textarea {
+        resize: none;
+        min-height: 52px;
+        max-height: 160px;
+        border: 0;
+        background: transparent;
+        padding: 8px;
+      }
+
+      button {
+        border: 0;
+        border-radius: 999px;
+        padding: 10px 16px;
+        background: var(--accent);
+        color: #101114;
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      button:disabled { opacity: 0.55; cursor: default; }
+
+      #status {
+        grid-column: 1 / -1;
+        color: var(--danger-text);
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <aside>
+      <div class="brand">
+        <strong>Arctic</strong>
+        <span>Host</span>
+      </div>
+      <label>
+        API root
+        <input id="api-root" value="https://api.openai.com/v1" />
+      </label>
+      <label>
+        Model
+        <input id="model-name" value="gpt-4o-mini" />
+      </label>
+      <label>
+        LLM Credential
+        <input id="credential" type="password" autocomplete="off" />
+      </label>
+      <p class="hint">The credential stays in this window. It is not written into the conversation.</p>
+    </aside>
+    <main>
+      <header>Conversation</header>
+      <section id="transcript" aria-live="polite"></section>
+      <form id="composer">
+        <textarea id="message" rows="2" placeholder="Send a message"></textarea>
+        <button id="send" type="submit">Send</button>
+        <p id="status" hidden></p>
+      </form>
+    </main>
+    <script>
+      const apiRoot = document.querySelector("#api-root");
+      const modelName = document.querySelector("#model-name");
+      const credential = document.querySelector("#credential");
+      const message = document.querySelector("#message");
+      const transcript = document.querySelector("#transcript");
+      const send = document.querySelector("#send");
+      const composer = document.querySelector("#composer");
+      const status = document.querySelector("#status");
+
+      function showStatus(text) {
+        status.hidden = text === "";
+        status.textContent = text;
+      }
+
+      function render(entries) {
+        transcript.replaceChildren();
+        if (entries.length === 0) {
+          const empty = document.createElement("p");
+          empty.className = "empty";
+          empty.textContent = "Send a message to start this conversation.";
+          transcript.append(empty);
+          return;
+        }
+        for (const entry of entries) {
+          const line = document.createElement("p");
+          line.className = "bubble " + entry.role;
+          const speaker = entry.role === "person" ? "You" : entry.role === "assistant" ? "Model" : "Failed";
+          line.textContent = speaker + ": " + entry.text;
+          transcript.append(line);
+        }
+        transcript.scrollTop = transcript.scrollHeight;
+      }
+
+      async function onSend() {
+        showStatus("");
+        if (!window.host) {
+          showStatus("The Host bridge is not available.");
+          return;
+        }
+        const text = message.value;
+        send.disabled = true;
+        try {
+          await window.host.setApiRoot(apiRoot.value);
+          await window.host.setModelName(modelName.value);
+          await window.host.setCredential(credential.value);
+          render(await window.host.send(text));
+          if (text.trim() !== "") {
+            message.value = "";
+          }
+        } catch (error) {
+          showStatus(error instanceof Error ? error.message : "The message could not be sent.");
+        } finally {
+          send.disabled = false;
+          message.focus();
+        }
+      }
+
+      composer.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void onSend();
+      });
+
+      message.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          void onSend();
+        }
+      });
+
+      render([]);
+    </script>
+  </body>
+</html>
