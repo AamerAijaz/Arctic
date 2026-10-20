@@ -103,6 +103,7 @@ class McpServerStreamableHttpTest {
                             "move_document_part",
                             "delete_document_parts",
                             "create_document_work_item",
+                            "create_requirement_work_item",
                             "list_project_users",
                             "assign_work_item"),
                     listed.tools().stream().map(Tool::name).collect(Collectors.toSet()));

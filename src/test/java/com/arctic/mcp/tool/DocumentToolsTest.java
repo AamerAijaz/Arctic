@@ -398,6 +398,75 @@ class DocumentToolsTest {
     }
 
     @Test
+    void createRequirementWorkItemCopiesDocumentImagesOntoTheWorkItem() {
+        byte[] png = new byte[] {(byte) 0x89, 0x50, 0x4e, 0x47, (byte) 0xff};
+        PolarionHttp http = PolarionHttp.open();
+        http.server
+                .expect(requestTo(Matchers.startsWith(PolarionHttp.ROOT + "/projects/ELK/spaces/_default/documents/Specs/parts?")))
+                .andRespond(withSuccess(
+                        """
+                        {"data":[
+                          {"type":"document_parts","id":"ELK/_default/Specs/polarion_3","attributes":{"type":"normal","content":{"type":"text/html","value":"<p>See</p><img src=\\"attachment:image1.png\\" style=\\"width: 10px;\\">"}}}
+                        ]}
+                        """,
+                        MediaType.APPLICATION_JSON));
+        http.server
+                .expect(requestTo(PolarionHttp.ROOT + "/projects/ELK/workitems"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(request -> {
+                    String body = ((MockClientHttpRequest) request).getBodyAsString();
+                    assertTrue(body.contains("attachment:image1.png"), body);
+                })
+                .andRespond(withSuccess(
+                        """
+                        {"data":[{"type":"workitems","id":"ELK/ELK-9","links":{"portal":"https://example.test/wi"}}]}
+                        """,
+                        MediaType.APPLICATION_JSON));
+        http.server
+                .expect(requestTo(PolarionHttp.ROOT
+                        + "/projects/ELK/spaces/_default/documents/Specs/attachments/image1.png/content"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(png, MediaType.APPLICATION_OCTET_STREAM));
+        http.server
+                .expect(requestTo(PolarionHttp.ROOT + "/projects/ELK/workitems/ELK-9/attachments"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(request -> {
+                    byte[] body = ((MockClientHttpRequest) request).getBodyAsBytes();
+                    String text = new String(body, java.nio.charset.StandardCharsets.ISO_8859_1);
+                    assertTrue(text.contains("image1.png"), text);
+                    assertTrue(text.contains("workitem_attachments"), text);
+                    int marker = indexOf(body, new byte[] {(byte) 0x89, 0x50, 0x4e, 0x47, (byte) 0xff});
+                    assertTrue(marker >= 0, text);
+                })
+                .andRespond(withStatus(HttpStatus.CREATED)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"data\":[{\"type\":\"workitem_attachments\",\"id\":\"ELK/ELK-9/image1.png\"}]}"));
+
+        CreatedWorkItem created = (CreatedWorkItem) new DocumentTools(http.client)
+                .createRequirementWorkItem(
+                        "ELK", "Specs", "softwarerequirement", "Diagram", List.of("polarion_3"), null, false);
+
+        assertEquals("ELK/ELK-9", created.id());
+        http.server.verify();
+    }
+
+    private static int indexOf(byte[] haystack, byte[] needle) {
+        for (int i = 0; i + needle.length <= haystack.length; i++) {
+            boolean match = true;
+            for (int j = 0; j < needle.length; j++) {
+                if (haystack[i + j] != needle[j]) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    @Test
     void createRequirementWorkItemDryRunDoesNotCreate() {
         PolarionHttp http = PolarionHttp.open();
         http.server

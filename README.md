@@ -22,6 +22,7 @@ Today the stack supports:
 - **`list_document_parts`** — headings, text, and embedded work items in a document (`work_item_id` when Polarion linked the part)
 - **`convert_heading_to_work_item`** — change a heading work item's type in place (`dry_run` by default)
 - **`create_document_work_item`** — create a work item in a document (`dry_run` by default)
+- **`create_requirement_work_item`** — copy named LiveDoc parts into one work item description, keeping their HTML, tables, and images, without changing the LiveDoc (`dry_run` by default)
 - **`import_document`** — import a Word file (`.docx`) as a LiveDoc through Polarion's Word import (`dry_run` by default). The LiveDoc keeps the source document's contents, sections, tables, images, and formatting, including material that is not a requirement
 - **`list_project_users`** — users with a project role (default `project_assignable`)
 - **`assign_work_item`** — replace the assignee list on a work item (`dry_run` by default)
@@ -235,7 +236,7 @@ Reload MCP in Cursor after the Java MCP Server is listening. Example prompts:
 
 Word import needs a filesystem path the MCP Server can read (for example the repo root on your machine). Browsers and chat UIs do not upload the `.docx` through MCP; put the file where the server process can open it and pass that path to `import_document`.
 
-The `whoami` and `list_projects` tools return ids and names, not the token. `create_work_item`, `create_work_item_type`, `update_work_item`, `create_work_item_link`, `delete_work_item_link`, `create_document`, `create_document_work_item`, `convert_heading_to_work_item`, `convert_headings_to_work_items`, `import_document`, `promote_document_requirements`, `assign_work_item`, and `assign_work_items_round_robin` default to `dry_run=true`; only set `dry_run=false` when you intend to create or change data. `list_requirement_blocks` is read-only. Call `list_work_item_types` before creating or promoting work items. Call `list_link_roles` before linking or creating a document. Call `list_project_users` before assigning.
+The `whoami` and `list_projects` tools return ids and names, not the token. `create_work_item`, `create_work_item_type`, `update_work_item`, `create_work_item_link`, `delete_work_item_link`, `create_document`, `create_document_work_item`, `create_requirement_work_item`, `convert_heading_to_work_item`, `convert_headings_to_work_items`, `import_document`, `promote_document_requirements`, `assign_work_item`, and `assign_work_items_round_robin` default to `dry_run=true`; only set `dry_run=false` when you intend to create or change data. `list_requirement_blocks` is read-only. Call `list_work_item_types` before creating or promoting work items. Call `list_link_roles` before linking or creating a document. Call `list_project_users` before assigning.
 
 ## Claude Code and Codex
 

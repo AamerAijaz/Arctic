@@ -19,6 +19,7 @@ import static com.arctic.mcp.polarion.PolarionResources.DocumentWorkItemCreatePr
 import static com.arctic.mcp.polarion.PolarionResources.LinkRole;
 import static com.arctic.mcp.polarion.PolarionResources.Project;
 import static com.arctic.mcp.polarion.PolarionResources.ProjectUser;
+import static com.arctic.mcp.polarion.PolarionResources.RequirementWorkItemPreview;
 import static com.arctic.mcp.polarion.PolarionResources.UpdatedWorkItem;
 import static com.arctic.mcp.polarion.PolarionResources.WorkItem;
 import static com.arctic.mcp.polarion.PolarionResources.WorkItemAssignPreview;
@@ -39,8 +40,10 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
@@ -61,6 +64,7 @@ public final class PolarionClient {
 
     private static final Pattern BEARER = Pattern.compile("Bearer\\s+\\S+", Pattern.CASE_INSENSITIVE);
     private static final Pattern HTML = Pattern.compile("<[^>]+>");
+    private static final Pattern DOCUMENT_ATTACHMENT = Pattern.compile("attachment:([^\"'\\s>]+)");
     private static final String REJECTED_TOKEN =
             "Polarion rejected the token. Create a personal access token in Polarion and set POLARION_TOKEN.";
     private static final String REST_DISABLED = "Polarion REST API is not enabled on this instance.";
@@ -561,6 +565,162 @@ public final class PolarionClient {
         return new CreatedDocumentWorkItem(created.id(), partId, created.portalUrl());
     }
 
+    public Object createRequirementWorkItem(
+            String projectId,
+            String documentName,
+            String type,
+            String title,
+            List<String> partIds,
+            String spaceId,
+            boolean dryRun) {
+        allowlist.assertAllowed(projectId);
+        if (partIds == null || partIds.isEmpty()) {
+            throw new PolarionException("part_ids must list the LiveDoc parts that make up the requirement.");
+        }
+        String space = space(spaceId);
+        String description = requirementDescription(sourceParts(projectId, documentName, space), partIds);
+        String documentId = projectId + "/" + space + "/" + documentName;
+        if (dryRun) {
+            return new RequirementWorkItemPreview(true, projectId, description);
+        }
+        Map<String, Object> body = workItemCreateBody(type, title, description, documentId);
+        JsonNode payload = tree(
+                exchange(
+                        HttpMethod.POST,
+                        "/projects/" + segment(projectId) + "/workitems",
+                        Map.of(),
+                        writeJson(body),
+                        null),
+                "create-work-item");
+        CreatedWorkItem created = parseCreatedWorkItem(payload);
+        copyDocumentAttachments(projectId, documentName, space, localId(created.id()), description);
+        return created;
+    }
+
+    private void copyDocumentAttachments(
+            String projectId, String documentName, String space, String workItemId, String description) {
+        for (String filename : attachmentNames(description)) {
+            String contentPath = "/projects/"
+                    + segment(projectId)
+                    + "/spaces/"
+                    + segment(space)
+                    + "/documents/"
+                    + segment(documentName)
+                    + "/attachments/"
+                    + segment(filename)
+                    + "/content";
+            byte[] content = exchangeBytes(HttpMethod.GET, contentPath, "Document attachment not found: " + filename);
+            uploadWorkItemAttachment(projectId, workItemId, filename, content);
+        }
+    }
+
+    private static List<String> attachmentNames(String html) {
+        LinkedHashSet<String> names = new LinkedHashSet<>();
+        Matcher matcher = DOCUMENT_ATTACHMENT.matcher(html == null ? "" : html);
+        while (matcher.find()) {
+            if (!matcher.group(1).isBlank()) {
+                names.add(matcher.group(1));
+            }
+        }
+        return List.copyOf(names);
+    }
+
+    private void uploadWorkItemAttachment(String projectId, String workItemId, String filename, byte[] content) {
+        Map<String, Object> resource = map(
+                "data",
+                List.of(map("type", "workitem_attachments", "attributes", map("fileName", filename))));
+        MultipartBodyBuilder multipart = new MultipartBodyBuilder();
+        multipart.part("resource", writeJson(resource), MediaType.APPLICATION_JSON);
+        multipart.part(
+                "files",
+                new ByteArrayResource(content) {
+                    @Override
+                    public String getFilename() {
+                        return filename;
+                    }
+                },
+                MediaType.APPLICATION_OCTET_STREAM);
+        exchangeMultipart(
+                "/projects/" + segment(projectId) + "/workitems/" + segment(workItemId) + "/attachments",
+                multipart.build());
+    }
+
+    private List<SourcePart> sourceParts(String projectId, String documentName, String space) {
+        List<SourcePart> parts = new ArrayList<>();
+        int pageNumber = 1;
+        while (true) {
+            JsonNode payload = tree(
+                    exchange(
+                            HttpMethod.GET,
+                            partsPath(projectId, space, documentName),
+                            partQuery(100, pageNumber),
+                            null,
+                            null),
+                    "document part list");
+            List<JsonNode> items = listData(payload, "document part list");
+            for (JsonNode item : items) {
+                parts.add(sourcePart(item));
+            }
+            if (items.size() < 100) {
+                return List.copyOf(parts);
+            }
+            pageNumber++;
+        }
+    }
+
+    private static Map<String, String> partQuery(int pageSize, int pageNumber) {
+        Map<String, String> params = paging(pageSize, pageNumber);
+        params.put("fields[document_parts]", DOCUMENT_PART_FIELDS);
+        params.put("include", "workItem");
+        return params;
+    }
+
+    private static SourcePart sourcePart(JsonNode item) {
+        JsonNode attributes = objectOrEmpty(item.get("attributes"));
+        Integer level = null;
+        JsonNode levelNode = attributes.get("level");
+        if (levelNode != null && levelNode.isInt()) {
+            level = levelNode.asInt();
+        }
+        return new SourcePart(
+                textOrNull(item.get("id")),
+                textValue(attributes.get("type")),
+                level,
+                textValue(attributes.get("headingText")),
+                textValue(attributes.get("content")));
+    }
+
+    private static String requirementDescription(List<SourcePart> parts, List<String> partIds) {
+        Map<String, SourcePart> byId = new LinkedHashMap<>();
+        for (SourcePart part : parts) {
+            if (part.id() == null) {
+                continue;
+            }
+            byId.put(part.id(), part);
+            byId.putIfAbsent(localId(part.id()), part);
+        }
+        StringBuilder html = new StringBuilder();
+        for (String partId : partIds) {
+            SourcePart part = byId.get(partId);
+            if (part == null) {
+                throw new PolarionException("Document part not found: " + partId);
+            }
+            if (part.html() != null && !part.html().isBlank()) {
+                html.append(part.html());
+            } else if (part.headingText() != null) {
+                int level = part.level() == null ? 1 : Math.min(6, Math.max(1, part.level()));
+                html.append("<h").append(level).append('>').append(escapeHtml(part.headingText())).append("</h").append(level).append('>');
+            }
+        }
+        return html.toString();
+    }
+
+    private static String escapeHtml(String text) {
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    private record SourcePart(String id, String partType, Integer level, String headingText, String html) {}
+
     public List<ProjectUser> listProjectUsers(String projectId, String role, Integer pageSize, Integer pageNumber) {
         allowlist.assertAllowed(projectId);
         String wanted = role == null || role.isBlank() ? "project_assignable" : role;
@@ -684,6 +844,29 @@ public final class PolarionClient {
                 attributes == null ? null : textOrNull(attributes.get("state")),
                 status == null || !status.isObject() ? null : textOrNull(status.get("type")),
                 status == null || !status.isObject() ? null : textOrNull(status.get("message")));
+    }
+
+    private byte[] exchangeBytes(HttpMethod method, String path, String notFoundDetail) {
+        PolarionCredentials current = credentials.get();
+        String requestUrl = url(current.restRoot(), path, Map.of());
+        try {
+            return http.method(method)
+                    .uri(URI.create(requestUrl))
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + current.token())
+                    .accept(MediaType.APPLICATION_OCTET_STREAM, MediaType.ALL)
+                    .exchange((request, response) -> {
+                        byte[] bytes = response.getBody().readAllBytes();
+                        read(
+                                response.getStatusCode(),
+                                new String(bytes, StandardCharsets.UTF_8),
+                                current.token(),
+                                notFoundDetail);
+                        return bytes;
+                    });
+        } catch (RestClientException exception) {
+            throw new PolarionUnavailableException(
+                    "Could not reach Polarion: " + redact(String.valueOf(exception.getMessage()), current.token()));
+        }
     }
 
     private String exchange(

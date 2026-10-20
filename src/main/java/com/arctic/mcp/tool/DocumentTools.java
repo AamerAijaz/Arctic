@@ -81,6 +81,19 @@ public final class DocumentTools {
             would receive.\
             """;
 
+    static final String CREATE_REQUIREMENT_WORK_ITEM =
+            """
+            Create one work item whose description is the LiveDoc parts you name.
+
+            `part_ids` are document part ids, in the order they should appear.
+            Their HTML is copied as stored, including tables and formatting.
+            Images stored as document attachments are copied onto the work
+            item. The tool does not assume a requirement layout.
+            Call it once per requirement. Existing LiveDoc parts are left in
+            place, so the document still shows the original content. Default
+            dry_run=true returns the description and does not create a work item.\
+            """;
+
     private final PolarionClient client;
 
     public DocumentTools(PolarionClient client) {
@@ -234,6 +247,29 @@ public final class DocumentTools {
                     parent,
                     previous_part,
                     next_part,
+                    ToolSupport.dryRun(dry_run));
+        } catch (PolarionException exception) {
+            throw ToolSupport.failed(exception);
+        }
+    }
+
+    @Tool(name = "create_requirement_work_item", description = CREATE_REQUIREMENT_WORK_ITEM)
+    public Object createRequirementWorkItem(
+            String project_id,
+            String document_name,
+            String type,
+            String title,
+            List<String> part_ids,
+            @ToolParam(required = false) String space_id,
+            @ToolParam(required = false) Boolean dry_run) {
+        try {
+            return client.createRequirementWorkItem(
+                    project_id,
+                    document_name,
+                    type,
+                    title,
+                    part_ids,
+                    space_id,
                     ToolSupport.dryRun(dry_run));
         } catch (PolarionException exception) {
             throw ToolSupport.failed(exception);

@@ -130,6 +130,11 @@ public final class PolarionResources {
             String text,
             @JsonProperty("work_item_id") String workItemId) {}
 
+    public record RequirementWorkItemPreview(
+            @JsonProperty("dry_run") boolean dryRun,
+            @JsonProperty("project_id") String projectId,
+            String description) {}
+
     public record DocumentPartPage(List<DocumentPart> parts, @JsonProperty("page_number") int pageNumber) {}
 
     public record DocumentPartMovePreview(
