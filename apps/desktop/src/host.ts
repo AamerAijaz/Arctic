@@ -22,13 +22,26 @@ export interface Model {
   complete(call: ModelCall): Promise<ModelResult>;
 }
 
+export type SecretSave = { ok: true } | { ok: false };
+
+export interface SecretStore {
+  read(): string;
+  replace(credential: string): SecretSave;
+}
+
 export class Host {
   private apiRoot = "";
   private modelName = "";
   private credential = "";
+  private saveFailed = false;
   private readonly entries: TranscriptEntry[] = [];
 
-  constructor(private readonly model: Model) {}
+  constructor(
+    private readonly model: Model,
+    private readonly secrets?: SecretStore,
+  ) {
+    this.credential = this.secrets?.read() ?? "";
+  }
 
   setApiRoot(apiRoot: string): void {
     this.apiRoot = apiRoot;
@@ -39,7 +52,20 @@ export class Host {
   }
 
   setCredential(credential: string): void {
+    if (credential.trim() === "") {
+      return;
+    }
+    const saved = this.secrets?.replace(credential) ?? { ok: true };
+    if (!saved.ok) {
+      this.saveFailed = true;
+      return;
+    }
+    this.saveFailed = false;
     this.credential = credential;
+  }
+
+  hasCredential(): boolean {
+    return this.credential.trim() !== "";
   }
 
   async send(message: string): Promise<void> {
@@ -47,6 +73,11 @@ export class Host {
       return;
     }
     this.entries.push({ role: "person", text: message });
+    if (this.saveFailed) {
+      this.saveFailed = false;
+      this.entries.push({ role: "failure", text: "The Host could not save the credential." });
+      return;
+    }
     if (this.credential.trim() === "") {
       this.entries.push({ role: "failure", text: "The model credential is missing." });
       return;

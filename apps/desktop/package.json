@@ -4,7 +4,7 @@
   "private": true,
   "main": "dist/main.js",
   "scripts": {
-    "test": "node --import tsx --test src/host.test.ts",
+    "test": "node --import tsx --test src/host.test.ts src/host-config.test.ts",
     "build": "tsc && node -e \"require('fs').copyFileSync('src/index.html','dist/index.html')\"",
     "start": "npm run build && electron ."
   },

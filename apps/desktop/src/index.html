@@ -53,6 +53,23 @@
 
       label { display: flex; flex-direction: column; gap: 6px; }
 
+      .secret-row { display: flex; gap: 8px; align-items: center; }
+
+      .secret-row input { flex: 1; }
+
+      #reveal {
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: 40px;
+        height: 40px;
+        padding: 0;
+        background: #2a2e38;
+        color: var(--text);
+      }
+
+      #reveal.revealed { color: var(--accent); }
+
       input, textarea, button {
         font: inherit;
         color: var(--text);
@@ -179,9 +196,17 @@
       </label>
       <label>
         LLM Credential
-        <input id="credential" type="password" autocomplete="off" />
+        <span class="secret-row">
+          <input id="credential" type="password" autocomplete="off" />
+          <button id="reveal" type="button" aria-label="Show LLM Credential">
+            <svg id="eye" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path fill="none" stroke="currentColor" stroke-width="2" d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/>
+              <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>
+            </svg>
+          </button>
+        </span>
       </label>
-      <p class="hint">The credential stays in this window. It is not written into the conversation.</p>
+      <p class="hint">The credential is not written into the conversation.</p>
     </aside>
     <main>
       <header>Conversation</header>
@@ -196,6 +221,7 @@
       const apiRoot = document.querySelector("#api-root");
       const modelName = document.querySelector("#model-name");
       const credential = document.querySelector("#credential");
+      const reveal = document.querySelector("#reveal");
       const message = document.querySelector("#message");
       const transcript = document.querySelector("#transcript");
       const send = document.querySelector("#send");
@@ -235,9 +261,18 @@
         const text = message.value;
         send.disabled = true;
         try {
-          await window.host.setApiRoot(apiRoot.value);
-          await window.host.setModelName(modelName.value);
-          await window.host.setCredential(credential.value);
+          const saved = await window.host.saveConfig({
+            apiRoot: apiRoot.value,
+            model: modelName.value,
+            apiKey: credential.value,
+          });
+          if (saved.apiRoot) {
+            apiRoot.value = saved.apiRoot;
+          }
+          if (saved.model) {
+            modelName.value = saved.model;
+          }
+          credential.value = saved.apiKey;
           render(await window.host.send(text));
           if (text.trim() !== "") {
             message.value = "";
@@ -262,7 +297,27 @@
         }
       });
 
+      reveal.addEventListener("click", () => {
+        const hidden = credential.type === "password";
+        credential.type = hidden ? "text" : "password";
+        reveal.classList.toggle("revealed", hidden);
+        reveal.setAttribute("aria-label", hidden ? "Hide LLM Credential" : "Show LLM Credential");
+      });
+
       render([]);
+      if (window.host) {
+        void window.host.loadConfig().then((saved) => {
+          if (saved.apiRoot) {
+            apiRoot.value = saved.apiRoot;
+          }
+          if (saved.model) {
+            modelName.value = saved.model;
+          }
+          if (saved.apiKey) {
+            credential.value = saved.apiKey;
+          }
+        });
+      }
     </script>
   </body>
 </html>

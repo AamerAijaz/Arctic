@@ -1,8 +1,13 @@
 import type { TranscriptEntry } from "./host";
 
+export type HostSettings = {
+  apiRoot: string;
+  model: string;
+  apiKey: string;
+};
+
 export type HostBridge = {
-  setApiRoot(apiRoot: string): Promise<void>;
-  setModelName(modelName: string): Promise<void>;
-  setCredential(credential: string): Promise<void>;
+  loadConfig(): Promise<HostSettings>;
+  saveConfig(settings: HostSettings): Promise<HostSettings>;
   send(message: string): Promise<TranscriptEntry[]>;
 };

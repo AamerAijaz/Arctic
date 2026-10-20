@@ -1,12 +1,20 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
 import { Host } from "./host";
+import { HostConfigFile, type HostConfig } from "./host-config";
 import { OpenAiModel } from "./openai-model";
-
-const host = new Host(new OpenAiModel());
 
 function text(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function asConfig(value: unknown): HostConfig {
+  const record = typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  return {
+    apiRoot: text(record.apiRoot),
+    model: text(record.model),
+    apiKey: text(record.apiKey),
+  };
 }
 
 function createWindow(): void {
@@ -22,24 +30,40 @@ function createWindow(): void {
   void window.loadFile(path.join(__dirname, "index.html"));
 }
 
-ipcMain.handle("host:set-api-root", (_event, apiRoot: unknown) => {
-  host.setApiRoot(text(apiRoot));
-});
+void app.whenReady().then(() => {
+  const config = new HostConfigFile(app.getPath("userData"));
+  const host = new Host(new OpenAiModel());
+  const saved = config.read();
+  if (saved.apiRoot.trim() !== "") {
+    host.setApiRoot(saved.apiRoot);
+  }
+  if (saved.model.trim() !== "") {
+    host.setModelName(saved.model);
+  }
+  if (saved.apiKey.trim() !== "") {
+    host.setCredential(saved.apiKey);
+  }
 
-ipcMain.handle("host:set-model-name", (_event, modelName: unknown) => {
-  host.setModelName(text(modelName));
-});
+  ipcMain.handle("host:load-config", () => config.read());
 
-ipcMain.handle("host:set-credential", (_event, credential: unknown) => {
-  host.setCredential(text(credential));
-});
+  ipcMain.handle("host:save-config", (_event, value: unknown) => {
+    config.write(asConfig(value));
+    const next = config.read();
+    host.setApiRoot(next.apiRoot);
+    host.setModelName(next.model);
+    if (next.apiKey.trim() !== "") {
+      host.setCredential(next.apiKey);
+    }
+    return next;
+  });
 
-ipcMain.handle("host:send", async (_event, message: unknown) => {
-  await host.send(text(message));
-  return host.transcript();
-});
+  ipcMain.handle("host:send", async (_event, message: unknown) => {
+    await host.send(text(message));
+    return host.transcript();
+  });
 
-void app.whenReady().then(createWindow);
+  createWindow();
+});
 
 app.on("window-all-closed", () => {
   app.quit();
