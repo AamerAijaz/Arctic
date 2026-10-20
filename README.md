@@ -21,7 +21,7 @@ Today the stack supports:
 - **`create_document`** — create a LiveDoc (`dry_run` by default)
 - **`list_document_parts`** — headings, text, and embedded work items in a document (`work_item_id` when Polarion linked the part)
 - **`convert_heading_to_work_item`** — change a heading work item's type in place (`dry_run` by default)
-- **`create_document_work_item`** — create a work item in a document (`dry_run` by default)
+- **`create_document_work_item`** — create a work item in a document and, when `source_part_ids` is set, delete those copied body parts afterwards. Headings are never deleted (`dry_run` by default)
 - **`create_requirement_work_item`** — copy named LiveDoc parts into one work item description, keeping their HTML, tables, and images, without changing the LiveDoc (`dry_run` by default)
 - **`import_document`** — import a Word file (`.docx`) as a LiveDoc through Polarion's Word import (`dry_run` by default). The LiveDoc keeps the source document's contents, sections, tables, images, and formatting, including material that is not a requirement
 - **`list_project_users`** — users with a project role (default `project_assignable`)

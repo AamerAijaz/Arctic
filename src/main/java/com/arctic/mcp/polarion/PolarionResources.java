@@ -149,7 +149,10 @@ public final class PolarionResources {
     public record DocumentPartDeleteResult(List<String> deleted) {}
 
     public record CreatedDocumentWorkItem(
-            String id, @JsonProperty("part_id") String partId, @JsonProperty("portal_url") String portalUrl) {}
+            String id,
+            @JsonProperty("part_id") String partId,
+            @JsonProperty("portal_url") String portalUrl,
+            List<String> deleted) {}
 
     public record DocumentWorkItemCreatePreview(
             @JsonProperty("dry_run") boolean dryRun,
@@ -160,7 +163,8 @@ public final class PolarionResources {
             String before,
             String parent,
             @JsonProperty("previous_part") String previousPart,
-            @JsonProperty("next_part") String nextPart) {}
+            @JsonProperty("next_part") String nextPart,
+            @JsonProperty("source_part_ids") List<String> sourcePartIds) {}
 
     public record ProjectUser(String id, String name, String email) {}
 

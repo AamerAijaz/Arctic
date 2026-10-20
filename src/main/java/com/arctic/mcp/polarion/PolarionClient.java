@@ -531,6 +531,7 @@ public final class PolarionClient {
             String parent,
             String previousPart,
             String nextPart,
+            List<String> sourcePartIds,
             boolean dryRun) {
         allowlist.assertAllowed(projectId);
         if (previousPart != null && nextPart != null) {
@@ -538,12 +539,16 @@ public final class PolarionClient {
         }
         String space = space(spaceId);
         String documentId = projectId + "/" + space + "/" + documentName;
+        List<String> sources = sourcePartIds == null ? List.of() : List.copyOf(sourcePartIds);
+        if (!sources.isEmpty()) {
+            rejectHeadingDeletion(sourceParts(projectId, documentName, space), sources, previousPart, nextPart);
+        }
         Map<String, Object> workItemBody = workItemCreateBody(type, title, description, documentId);
         boolean insertInPlace = previousPart != null || nextPart != null;
         Map<String, Object> previewPart = documentPartBody("", previousPart, nextPart);
         if (dryRun) {
             return new DocumentWorkItemCreatePreview(
-                    true, projectId, workItemBody, previewPart, after, before, parent, previousPart, nextPart);
+                    true, projectId, workItemBody, previewPart, after, before, parent, previousPart, nextPart, sources);
         }
         JsonNode createdPayload = tree(
                 exchange(
@@ -562,7 +567,40 @@ public final class PolarionClient {
         if (!insertInPlace && (after != null || before != null || parent != null)) {
             moveDocumentPart(projectId, documentName, partId, after, before, parent, space, false);
         }
-        return new CreatedDocumentWorkItem(created.id(), partId, created.portalUrl());
+        List<String> deleted = sources.stream().filter(sourcePartId -> !samePart(sourcePartId, partId)).toList();
+        if (!deleted.isEmpty()) {
+            deleteDocumentParts(projectId, documentName, deleted, space, false);
+        }
+        return new CreatedDocumentWorkItem(created.id(), partId, created.portalUrl(), deleted);
+    }
+
+    private static void rejectHeadingDeletion(
+            List<SourcePart> parts, List<String> sourcePartIds, String previousPart, String nextPart) {
+        Map<String, SourcePart> byId = new LinkedHashMap<>();
+        for (SourcePart part : parts) {
+            if (part.id() == null) {
+                continue;
+            }
+            byId.put(part.id(), part);
+            byId.putIfAbsent(localId(part.id()), part);
+        }
+        for (String sourcePartId : sourcePartIds) {
+            SourcePart part = byId.get(sourcePartId);
+            if (part == null) {
+                throw new PolarionException("Document part not found: " + sourcePartId);
+            }
+            if ("heading".equals(part.partType())) {
+                throw new PolarionException("Refusing to delete a heading: " + sourcePartId);
+            }
+            if (samePart(sourcePartId, previousPart) || samePart(sourcePartId, nextPart)) {
+                throw new PolarionException(
+                        "Refusing to delete the part the work item is inserted beside: " + sourcePartId);
+            }
+        }
+    }
+
+    private static boolean samePart(String left, String right) {
+        return left != null && right != null && (left.equals(right) || localId(left).equals(localId(right)));
     }
 
     public Object createRequirementWorkItem(

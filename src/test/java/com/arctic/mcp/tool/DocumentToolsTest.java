@@ -166,7 +166,7 @@ class DocumentToolsTest {
 
         DocumentWorkItemCreatePreview preview = (DocumentWorkItemCreatePreview) new DocumentTools(http.client)
                 .createDocumentWorkItem(
-                        "ELK", "Specs", "requirement", "REQ-1", null, "<p>Text</p>", null, null, null, "heading_1", null, null);
+                        "ELK", "Specs", "requirement", "REQ-1", null, "<p>Text</p>", null, null, null, "heading_1", null, null, null);
 
         assertTrue(preview.dryRun());
         @SuppressWarnings("unchecked")
@@ -189,7 +189,7 @@ class DocumentToolsTest {
         RuntimeException error = assertThrows(
                 RuntimeException.class,
                 () -> new DocumentTools(http.client)
-                        .createDocumentWorkItem("ELK", "Specs", "requirement", "REQ-1", null, null, null, null, null, "a", "b", null));
+                        .createDocumentWorkItem("ELK", "Specs", "requirement", "REQ-1", null, null, null, null, null, "a", "b", null, null));
 
         assertEquals("Specify only one of previous_part or next_part.", error.getMessage());
         http.server.verify();
@@ -216,11 +216,110 @@ class DocumentToolsTest {
                         MediaType.APPLICATION_JSON));
 
         CreatedDocumentWorkItem created = (CreatedDocumentWorkItem) new DocumentTools(http.client)
-                .createDocumentWorkItem("ELK", "Specs", "requirement", "REQ-1", null, null, null, null, null, "heading_1", null, false);
+                .createDocumentWorkItem("ELK", "Specs", "requirement", "REQ-1", null, null, null, null, null, "heading_1", null, null, false);
 
         assertEquals("ELK/ELK-9", created.id());
         assertEquals("ELK/_default/Specs/workitem_ELK-9", created.partId());
         assertEquals("https://example.test/wi", created.portalUrl());
+        http.server.verify();
+    }
+
+    @Test
+    void createDocumentWorkItemRemovesCopiedBodyPartsAndKeepsTheHeading() {
+        PolarionHttp http = PolarionHttp.open();
+        http.server
+                .expect(requestTo(Matchers.startsWith(PolarionHttp.ROOT + "/projects/ELK/spaces/_default/documents/Specs/parts?")))
+                .andRespond(withSuccess(
+                        """
+                        {"data":[
+                          {"type":"document_parts","id":"ELK/_default/Specs/heading_1","attributes":{"type":"heading","headingText":"CenTrak"}},
+                          {"type":"document_parts","id":"ELK/_default/Specs/polarion_27","attributes":{"type":"normal","content":{"type":"text/html","value":"<p>Global ID: GID-2586182</p>"}}},
+                          {"type":"document_parts","id":"ELK/_default/Specs/polarion_28","attributes":{"type":"normal","content":{"type":"text/html","value":"<p>Summary</p>"}}}
+                        ]}
+                        """,
+                        MediaType.APPLICATION_JSON));
+        http.server
+                .expect(requestTo(PolarionHttp.ROOT + "/projects/ELK/workitems"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(
+                        """
+                        {"data":[{"type":"workitems","id":"ELK/ELK-9","links":{"portal":"https://example.test/wi"}}]}
+                        """,
+                        MediaType.APPLICATION_JSON));
+        http.server
+                .expect(requestTo(PolarionHttp.ROOT + "/projects/ELK/spaces/_default/documents/Specs/parts"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(
+                        """
+                        {"data":[{"type":"document_parts","id":"ELK/_default/Specs/workitem_ELK-9"}]}
+                        """,
+                        MediaType.APPLICATION_JSON));
+        http.server
+                .expect(requestTo(PolarionHttp.ROOT + "/projects/ELK/spaces/_default/documents/Specs/parts"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andExpect(request -> {
+                    String body = ((MockClientHttpRequest) request).getBodyAsString();
+                    assertTrue(body.contains("polarion_27"), body);
+                    assertTrue(body.contains("polarion_28"), body);
+                    assertFalse(body.contains("heading_1"), body);
+                    assertFalse(body.contains("workitem_ELK-9"), body);
+                })
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+
+        CreatedDocumentWorkItem created = (CreatedDocumentWorkItem) new DocumentTools(http.client)
+                .createDocumentWorkItem(
+                        "ELK",
+                        "Specs",
+                        "softwarerequirement",
+                        "CenTrak Location Zero",
+                        null,
+                        "<p>Global ID: GID-2586182</p><p>Summary</p>",
+                        null,
+                        null,
+                        null,
+                        "heading_1",
+                        null,
+                        List.of("polarion_27", "polarion_28"),
+                        false);
+
+        assertEquals("ELK/ELK-9", created.id());
+        assertEquals(List.of("polarion_27", "polarion_28"), created.deleted());
+        http.server.verify();
+    }
+
+    @Test
+    void createDocumentWorkItemRefusesToDeleteAHeading() {
+        PolarionHttp http = PolarionHttp.open();
+        http.server
+                .expect(requestTo(Matchers.startsWith(PolarionHttp.ROOT + "/projects/ELK/spaces/_default/documents/Specs/parts?")))
+                .andRespond(withSuccess(
+                        """
+                        {"data":[
+                          {"type":"document_parts","id":"ELK/_default/Specs/heading_1","attributes":{"type":"heading","headingText":"CenTrak"}},
+                          {"type":"document_parts","id":"ELK/_default/Specs/polarion_27","attributes":{"type":"normal"}}
+                        ]}
+                        """,
+                        MediaType.APPLICATION_JSON));
+
+        RuntimeException error = assertThrows(
+                RuntimeException.class,
+                () -> new DocumentTools(http.client)
+                        .createDocumentWorkItem(
+                                "ELK",
+                                "Specs",
+                                "softwarerequirement",
+                                "CenTrak",
+                                null,
+                                "<p>Body</p>",
+                                null,
+                                null,
+                                null,
+                                "heading_1",
+                                null,
+                                List.of("heading_1"),
+                                false));
+
+        assertTrue(error.getMessage().contains("Refusing to delete a heading"), error.getMessage());
         http.server.verify();
     }
 

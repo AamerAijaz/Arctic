@@ -76,9 +76,11 @@ public final class DocumentTools {
             Pass `previous_part` or
             `next_part` (a part id from list_document_parts) to insert it in the
             body at that position. Without those, Polarion appends at the end;
-            `parent`/`after`/`before` then move the appended part. Default
-            dry_run=true only returns the work-item and part bodies Polarion
-            would receive.\
+            `parent`/`after`/`before` then move the appended part.
+            `source_part_ids` are the LiveDoc body parts copied into this work
+            item. After the work item is inserted, those parts are deleted so
+            the document does not show them twice. Headings are never deleted.
+            Default dry_run=true only returns the bodies Polarion would receive.\
             """;
 
     static final String CREATE_REQUIREMENT_WORK_ITEM =
@@ -233,6 +235,7 @@ public final class DocumentTools {
             @ToolParam(required = false) String parent,
             @ToolParam(required = false) String previous_part,
             @ToolParam(required = false) String next_part,
+            @ToolParam(required = false) List<String> source_part_ids,
             @ToolParam(required = false) Boolean dry_run) {
         try {
             return client.createDocumentWorkItem(
@@ -247,6 +250,7 @@ public final class DocumentTools {
                     parent,
                     previous_part,
                     next_part,
+                    source_part_ids,
                     ToolSupport.dryRun(dry_run));
         } catch (PolarionException exception) {
             throw ToolSupport.failed(exception);
