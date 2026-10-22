@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
+import { FileConversationStore } from "./conversation-store";
 import { Host } from "./host";
 import { HostConfigFile, type HostConfig } from "./host-config";
 import { OpenAiModel } from "./openai-model";
@@ -31,8 +32,9 @@ function createWindow(): void {
 }
 
 void app.whenReady().then(() => {
-  const config = new HostConfigFile(app.getPath("userData"));
-  const host = new Host(new OpenAiModel());
+  const directory = app.getPath("userData");
+  const config = new HostConfigFile(directory);
+  const host = new Host(new OpenAiModel(), undefined, new FileConversationStore(directory));
   const saved = config.read();
   if (saved.apiRoot.trim() !== "") {
     host.setApiRoot(saved.apiRoot);
@@ -57,9 +59,21 @@ void app.whenReady().then(() => {
     return next;
   });
 
+  ipcMain.handle("host:load", () => host.view());
+
+  ipcMain.handle("host:start", () => {
+    host.start();
+    return host.view();
+  });
+
+  ipcMain.handle("host:open", (_event, id: unknown) => {
+    host.open(text(id));
+    return host.view();
+  });
+
   ipcMain.handle("host:send", async (_event, message: unknown) => {
     await host.send(text(message));
-    return host.transcript();
+    return host.view();
   });
 
   createWindow();

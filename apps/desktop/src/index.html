@@ -37,9 +37,57 @@
         display: flex;
         flex-direction: column;
         gap: 16px;
+        min-height: 0;
+        overflow: hidden;
         padding: 20px 16px;
         background: var(--sidebar);
         border-right: 1px solid var(--line);
+      }
+
+      .conversations {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        flex: 1;
+        min-height: 0;
+      }
+
+      .section-label {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      #conversation-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+      }
+
+      #new-conversation,
+      .conversation-row {
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--text);
+        font-weight: 400;
+        text-align: left;
+        padding: 10px 12px;
+        cursor: pointer;
+      }
+
+      #new-conversation { border: 1px solid var(--line); }
+
+      .conversation-row.open { background: var(--person); }
+
+      .settings {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        flex-shrink: 0;
       }
 
       .brand {
@@ -161,7 +209,7 @@
         padding: 8px;
       }
 
-      button {
+      #send {
         border: 0;
         border-radius: 999px;
         padding: 10px 16px;
@@ -171,7 +219,7 @@
         cursor: pointer;
       }
 
-      button:disabled { opacity: 0.55; cursor: default; }
+      #send:disabled { opacity: 0.55; cursor: default; }
 
       #status {
         grid-column: 1 / -1;
@@ -186,6 +234,12 @@
         <strong>Arctic</strong>
         <span>Host</span>
       </div>
+      <section class="conversations">
+        <p class="section-label">Conversations</p>
+        <button id="new-conversation" type="button">New conversation</button>
+        <div id="conversation-list"></div>
+      </section>
+      <div class="settings">
       <label>
         API root
         <input id="api-root" value="https://api.openai.com/v1" />
@@ -207,9 +261,10 @@
         </span>
       </label>
       <p class="hint">The credential is not written into the conversation.</p>
+      </div>
     </aside>
     <main>
-      <header>Conversation</header>
+      <header id="title">Conversation</header>
       <section id="transcript" aria-live="polite"></section>
       <form id="composer">
         <textarea id="message" rows="2" placeholder="Send a message"></textarea>
@@ -224,6 +279,8 @@
       const reveal = document.querySelector("#reveal");
       const message = document.querySelector("#message");
       const transcript = document.querySelector("#transcript");
+      const conversationList = document.querySelector("#conversation-list");
+      const title = document.querySelector("#title");
       const send = document.querySelector("#send");
       const composer = document.querySelector("#composer");
       const status = document.querySelector("#status");
@@ -233,16 +290,38 @@
         status.textContent = text;
       }
 
-      function render(entries) {
+      let viewGeneration = 0;
+
+      function showView(view) {
+        const open = view.conversations.find((conversation) => conversation.open);
+        title.textContent = open ? open.title : "Conversation";
+        conversationList.replaceChildren();
+        if (view.conversations.length === 0) {
+          const none = document.createElement("p");
+          none.className = "hint";
+          none.textContent = "No conversations yet";
+          conversationList.append(none);
+        } else {
+          for (const conversation of view.conversations) {
+            const row = document.createElement("button");
+            row.type = "button";
+            row.className = "conversation-row" + (conversation.open ? " open" : "");
+            row.textContent = conversation.title;
+            row.addEventListener("click", () => {
+              void takeView(() => window.host.open(conversation.id));
+            });
+            conversationList.append(row);
+          }
+        }
         transcript.replaceChildren();
-        if (entries.length === 0) {
+        if (view.transcript.length === 0) {
           const empty = document.createElement("p");
           empty.className = "empty";
           empty.textContent = "Send a message to start this conversation.";
           transcript.append(empty);
           return;
         }
-        for (const entry of entries) {
+        for (const entry of view.transcript) {
           const line = document.createElement("p");
           line.className = "bubble " + entry.role;
           const speaker = entry.role === "person" ? "You" : entry.role === "assistant" ? "Model" : "Failed";
@@ -252,6 +331,16 @@
         transcript.scrollTop = transcript.scrollHeight;
       }
 
+      function takeView(request) {
+        const generation = ++viewGeneration;
+        return request().then((view) => {
+          if (generation === viewGeneration) {
+            showView(view);
+          }
+          return view;
+        });
+      }
+
       async function onSend() {
         showStatus("");
         if (!window.host) {
@@ -259,6 +348,7 @@
           return;
         }
         const text = message.value;
+        const generation = ++viewGeneration;
         send.disabled = true;
         try {
           const saved = await window.host.saveConfig({
@@ -273,7 +363,10 @@
             modelName.value = saved.model;
           }
           credential.value = saved.apiKey;
-          render(await window.host.send(text));
+          const view = await window.host.send(text);
+          if (generation === viewGeneration) {
+            showView(view);
+          }
           if (text.trim() !== "") {
             message.value = "";
           }
@@ -304,8 +397,16 @@
         reveal.setAttribute("aria-label", hidden ? "Hide LLM Credential" : "Show LLM Credential");
       });
 
-      render([]);
+      document.querySelector("#new-conversation").addEventListener("click", () => {
+        if (!window.host) {
+          showStatus("The Host bridge is not available.");
+          return;
+        }
+        void takeView(() => window.host.start());
+      });
+
       if (window.host) {
+        void takeView(() => window.host.load());
         void window.host.loadConfig().then((saved) => {
           if (saved.apiRoot) {
             apiRoot.value = saved.apiRoot;
@@ -317,6 +418,8 @@
             credential.value = saved.apiKey;
           }
         });
+      } else {
+        showView({ conversations: [], transcript: [] });
       }
     </script>
   </body>

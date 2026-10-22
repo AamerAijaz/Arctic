@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
+import { FileConversationStore } from "./conversation-store";
 import { Host } from "./host";
 
 class MemorySecretStore {
@@ -280,4 +284,156 @@ test("a Host that cannot save the LLM Credential records a failure and does not 
     { role: "failure", text: "The Host could not save the credential." },
   ]);
   assert.equal(JSON.stringify(host.transcript()).includes("sk-test-secret"), false);
+});
+
+test("a Conversation is still there after the Host restarts", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "arctic-conversations-"));
+  const model = {
+    complete: async () => ({ kind: "assistant" as const, text: "Polarion is an ALM tool." }),
+  };
+  const first = new Host(model, undefined, new FileConversationStore(directory));
+  first.setApiRoot("https://api.openai.com/v1");
+  first.setModelName("gpt-4o-mini");
+  first.setCredential("sk-test-secret");
+  await first.send("What is Polarion?");
+
+  const restarted = new Host(model, undefined, new FileConversationStore(directory));
+  const seen = first.view();
+
+  assert.deepEqual(restarted.view(), {
+    conversations: [{ id: seen.conversations[0].id, title: "What is Polarion?", open: true }],
+    transcript: [
+      { role: "person", text: "What is Polarion?" },
+      { role: "assistant", text: "Polarion is an ALM tool." },
+    ],
+  });
+  assert.equal(JSON.stringify(restarted.view()).includes("sk-test-secret"), false);
+});
+
+test("several Conversations stay on disk and only one is open", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "arctic-conversations-"));
+  const model = {
+    complete: async (call: { messages: { text: string }[] }) => {
+      const latest = call.messages[call.messages.length - 1]?.text;
+      if (latest === "What is Polarion?") {
+        return { kind: "assistant" as const, text: "Polarion is an ALM tool." };
+      }
+      return { kind: "assistant" as const, text: "Still about Polarion." };
+    },
+  };
+  const first = new Host(model, undefined, new FileConversationStore(directory));
+  first.setApiRoot("https://api.openai.com/v1");
+  first.setModelName("gpt-4o-mini");
+  first.setCredential("sk-test-secret");
+  await first.send("What is Polarion?");
+  first.start();
+  await first.send("And the second question?");
+
+  const seen = first.view();
+  assert.deepEqual(
+    seen.conversations.map((conversation) => ({ title: conversation.title, open: conversation.open })),
+    [
+      { title: "What is Polarion?", open: false },
+      { title: "And the second question?", open: true },
+    ],
+  );
+  assert.deepEqual(seen.transcript, [
+    { role: "person", text: "And the second question?" },
+    { role: "assistant", text: "Still about Polarion." },
+  ]);
+
+  const restarted = new Host(model, undefined, new FileConversationStore(directory));
+  const restored = restarted.view();
+  assert.deepEqual(
+    restored.conversations.map((conversation) => ({ title: conversation.title, open: conversation.open })),
+    [
+      { title: "What is Polarion?", open: false },
+      { title: "And the second question?", open: true },
+    ],
+  );
+  assert.deepEqual(restored.transcript, [
+    { role: "person", text: "And the second question?" },
+    { role: "assistant", text: "Still about Polarion." },
+  ]);
+  restarted.open(restored.conversations[0].id);
+  assert.deepEqual(restarted.view().transcript, [
+    { role: "person", text: "What is Polarion?" },
+    { role: "assistant", text: "Polarion is an ALM tool." },
+  ]);
+});
+
+test("starting again while the open Conversation is empty keeps that one", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "arctic-conversations-"));
+  const host = new Host(
+    { complete: async () => ({ kind: "assistant" as const, text: "unused" }) },
+    undefined,
+    new FileConversationStore(directory),
+  );
+  host.start();
+  const firstId = host.view().conversations[0].id;
+  host.start();
+  const view = host.view();
+  assert.deepEqual(view.conversations, [{ id: firstId, title: "New conversation", open: true }]);
+  assert.deepEqual(view.transcript, []);
+});
+
+test("opening an unknown Conversation changes nothing", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "arctic-conversations-"));
+  const host = new Host(
+    { complete: async () => ({ kind: "assistant" as const, text: "Polarion is an ALM tool." }) },
+    undefined,
+    new FileConversationStore(directory),
+  );
+  host.setCredential("sk-test-secret");
+  await host.send("What is Polarion?");
+  const before = host.view();
+  host.open("missing");
+  assert.deepEqual(host.view(), before);
+});
+
+test("a blank message does not start a Conversation", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "arctic-conversations-"));
+  const host = new Host(
+    { complete: async () => ({ kind: "assistant" as const, text: "unused" }) },
+    undefined,
+    new FileConversationStore(directory),
+  );
+  await host.send("   ");
+  assert.deepEqual(host.view(), { conversations: [], transcript: [] });
+});
+
+test("a failure stays after restart and is left out of the next model call", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "arctic-conversations-"));
+  const calls: { text: string }[][] = [];
+  const model = {
+    complete: async (call: { messages: { text: string }[] }) => {
+      calls.push(call.messages);
+      return { kind: "unreachable" as const };
+    },
+  };
+  const first = new Host(model, undefined, new FileConversationStore(directory));
+  first.setCredential("sk-test-secret");
+  await first.send("What is Polarion?");
+  const restarted = new Host(
+    {
+      complete: async (call: { messages: { text: string }[] }) => {
+        calls.push(call.messages);
+        return { kind: "assistant" as const, text: "Polarion is an ALM tool." };
+      },
+    },
+    undefined,
+    new FileConversationStore(directory),
+  );
+  restarted.setCredential("sk-test-secret");
+  await restarted.send("Try again");
+  assert.deepEqual(restarted.view().transcript, [
+    { role: "person", text: "What is Polarion?" },
+    { role: "failure", text: "The model could not be reached." },
+    { role: "person", text: "Try again" },
+    { role: "assistant", text: "Polarion is an ALM tool." },
+  ]);
+  assert.deepEqual(calls[1], [
+    { role: "person", text: "What is Polarion?" },
+    { role: "person", text: "Try again" },
+  ]);
 });

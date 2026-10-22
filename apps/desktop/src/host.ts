@@ -1,7 +1,21 @@
+import { randomUUID } from "node:crypto";
+import type { ConversationRecord, ConversationStore } from "./conversation-store";
+
 export type TranscriptEntry =
   | { role: "person"; text: string }
   | { role: "assistant"; text: string }
   | { role: "failure"; text: string };
+
+export type ConversationSummary = {
+  id: string;
+  title: string;
+  open: boolean;
+};
+
+export type HostView = {
+  conversations: ConversationSummary[];
+  transcript: TranscriptEntry[];
+};
 
 export type ConversationTurn = Exclude<TranscriptEntry, { role: "failure" }>;
 
@@ -29,18 +43,27 @@ export interface SecretStore {
   replace(credential: string): SecretSave;
 }
 
+const titleLimit = 60;
+
 export class Host {
   private apiRoot = "";
   private modelName = "";
   private credential = "";
   private saveFailed = false;
-  private readonly entries: TranscriptEntry[] = [];
+  private openId: string | null = null;
+  private records: ConversationRecord[] = [];
 
   constructor(
     private readonly model: Model,
     private readonly secrets?: SecretStore,
+    private readonly conversationStore?: ConversationStore,
   ) {
     this.credential = this.secrets?.read() ?? "";
+    const saved = this.conversationStore?.read();
+    if (saved) {
+      this.openId = saved.openId;
+      this.records = saved.conversations;
+    }
   }
 
   setApiRoot(apiRoot: string): void {
@@ -72,43 +95,112 @@ export class Host {
     if (message.trim() === "") {
       return;
     }
-    this.entries.push({ role: "person", text: message });
+    const open = this.ensureOpen();
+    open.entries.push({ role: "person", text: message });
+    this.persist();
     if (this.saveFailed) {
       this.saveFailed = false;
-      this.entries.push({ role: "failure", text: "The Host could not save the credential." });
+      open.entries.push({ role: "failure", text: "The Host could not save the credential." });
+      this.persist();
       return;
     }
     if (this.credential.trim() === "") {
-      this.entries.push({ role: "failure", text: "The model credential is missing." });
+      open.entries.push({ role: "failure", text: "The model credential is missing." });
+      this.persist();
       return;
     }
     const result = await this.model.complete({
       apiRoot: this.apiRoot,
       modelName: this.modelName,
       credential: this.credential,
-      messages: this.entries.flatMap((entry) =>
+      messages: open.entries.flatMap((entry) =>
         entry.role === "failure" ? [] : [{ role: entry.role, text: entry.text }],
       ),
     });
     if (result.kind === "rejected") {
-      this.entries.push({ role: "failure", text: "The model rejected the credential." });
+      open.entries.push({ role: "failure", text: "The model rejected the credential." });
+      this.persist();
       return;
     }
     if (result.kind === "unreachable") {
-      this.entries.push({ role: "failure", text: "The model could not be reached." });
+      open.entries.push({ role: "failure", text: "The model could not be reached." });
+      this.persist();
       return;
     }
     if (result.kind === "tool_call") {
-      this.entries.push({
+      open.entries.push({
         role: "failure",
         text: "The model asked for a tool, and this Host cannot run tools.",
       });
+      this.persist();
       return;
     }
-    this.entries.push({ role: "assistant", text: result.text });
+    open.entries.push({ role: "assistant", text: result.text });
+    this.persist();
+  }
+
+  start(): void {
+    const open = this.records.find((record) => record.id === this.openId);
+    if (open && open.entries.length === 0) {
+      return;
+    }
+    const created: ConversationRecord = { id: randomUUID(), entries: [] };
+    this.records.push(created);
+    this.openId = created.id;
+    this.persist();
+  }
+
+  open(id: string): void {
+    if (!this.records.some((record) => record.id === id)) {
+      return;
+    }
+    this.openId = id;
+    this.persist();
   }
 
   transcript(): TranscriptEntry[] {
-    return this.entries.map((entry) => ({ ...entry }));
+    return this.openEntries().map((entry) => ({ ...entry }));
   }
+
+  view(): HostView {
+    return {
+      conversations: this.records.map((record) => ({
+        id: record.id,
+        title: conversationTitle(record),
+        open: record.id === this.openId,
+      })),
+      transcript: this.transcript(),
+    };
+  }
+
+  private ensureOpen(): ConversationRecord {
+    const existing = this.records.find((record) => record.id === this.openId);
+    if (existing) {
+      return existing;
+    }
+    const created: ConversationRecord = { id: randomUUID(), entries: [] };
+    this.records.push(created);
+    this.openId = created.id;
+    return created;
+  }
+
+  private openEntries(): TranscriptEntry[] {
+    return this.records.find((record) => record.id === this.openId)?.entries ?? [];
+  }
+
+  private persist(): void {
+    this.conversationStore?.write({ openId: this.openId, conversations: this.records });
+  }
+}
+
+function conversationTitle(record: ConversationRecord): string {
+  const person = record.entries.find((entry) => entry.role === "person");
+  if (!person) {
+    return "New conversation";
+  }
+  const trimmed = person.text.trim().replace(/\s+/g, " ");
+  if (trimmed.length <= titleLimit) {
+    return trimmed;
+  }
+  return trimmed.slice(0, titleLimit).trimEnd();
 }
