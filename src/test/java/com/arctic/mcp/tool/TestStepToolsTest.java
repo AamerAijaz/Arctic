@@ -226,6 +226,33 @@ class TestStepToolsTest {
   }
 
   @Test
+  void omittedCellValueReadsAsEmptyString() {
+    PolarionHttp http = PolarionHttp.open();
+    http.server
+        .expect(
+            requestTo(
+                Matchers.startsWith(PolarionHttp.ROOT + "/projects/ELK/workitems/ELK-1/teststeps")))
+        .andRespond(
+            withSuccess(
+                """
+                {"data":[{"type":"teststeps","attributes":{"keys":["step","description","expectedResult"],"values":[
+                  {"type":"text/html","value":"Start DrivePilot"},
+                  {"type":"text/html"},
+                  {"type":"text/html","value":null}
+                ]}}]}
+                """,
+                MediaType.APPLICATION_JSON));
+
+    TestStepTable table = new TestStepTools(http.client).getTestSteps("ELK", "ELK-1");
+
+    assertEquals(List.of("step", "description", "expectedResult"), table.columns());
+    assertEquals("Start DrivePilot", table.steps().get(0).get("step"));
+    assertEquals("", table.steps().get(0).get("description"));
+    assertEquals("", table.steps().get(0).get("expectedResult"));
+    http.server.verify();
+  }
+
+  @Test
   void dryRunPreviewsNewRowsAndDoesNotPost() {
     PolarionHttp http = PolarionHttp.open();
     emptyCaseWithDefaultColumns(http);
@@ -324,6 +351,91 @@ class TestStepToolsTest {
     assertEquals(
         "ELK/ELK-1 already has 1 test step; pass expected_version from get_test_steps.",
         error.getMessage());
+    http.server.verify();
+  }
+
+  @Test
+  void applyOnAFilledTableDeletesThenPostsTheFullTable() {
+    PolarionHttp http = PolarionHttp.open();
+    String existing =
+        """
+        {"data":[
+          {"type":"teststeps","id":"ELK/ELK-1/1","attributes":{"index":"1","keys":["step","description","expectedResult"],"values":[
+            {"type":"text/html","value":"Start DrivePilot"},
+            {"type":"text/html"},
+            {"type":"text/html","value":null}
+          ]}},
+          {"type":"teststeps","id":"ELK/ELK-1/2","attributes":{"index":"2","keys":["step","description","expectedResult"],"values":[
+            {"type":"text/html","value":"Park"},
+            {"type":"text/html","value":"Press brake"},
+            {"type":"text/html","value":"Stops"}
+          ]}}
+        ]}
+        """;
+    http.server
+        .expect(
+            requestTo(
+                Matchers.startsWith(PolarionHttp.ROOT + "/projects/ELK/workitems/ELK-1/teststeps")))
+        .andExpect(method(HttpMethod.GET))
+        .andRespond(withSuccess(existing, MediaType.APPLICATION_JSON));
+    http.server
+        .expect(
+            requestTo(
+                Matchers.startsWith(PolarionHttp.ROOT + "/projects/ELK/workitems/ELK-1/teststeps")))
+        .andExpect(method(HttpMethod.GET))
+        .andRespond(withSuccess(existing, MediaType.APPLICATION_JSON));
+    http.server
+        .expect(requestTo(PolarionHttp.ROOT + "/projects/ELK/workitems/ELK-1/teststeps/2"))
+        .andExpect(method(HttpMethod.DELETE))
+        .andRespond(withStatus(HttpStatus.NO_CONTENT));
+    http.server
+        .expect(requestTo(PolarionHttp.ROOT + "/projects/ELK/workitems/ELK-1/teststeps/1"))
+        .andExpect(method(HttpMethod.DELETE))
+        .andRespond(withStatus(HttpStatus.NO_CONTENT));
+    http.server
+        .expect(requestTo(PolarionHttp.ROOT + "/projects/ELK/workitems/ELK-1/teststeps"))
+        .andExpect(method(HttpMethod.POST))
+        .andExpect(
+            content()
+                .json(
+                    """
+                    {"data":[
+                      {"type":"teststeps","attributes":{"keys":["step","description","expectedResult"],"values":[
+                        {"type":"text/html","value":"Start DrivePilot"},
+                        {"type":"text/html","value":""},
+                        {"type":"text/html","value":""}
+                      ]}},
+                      {"type":"teststeps","attributes":{"keys":["step","description","expectedResult"],"values":[
+                        {"type":"text/html","value":"Park"},
+                        {"type":"text/html","value":"Press brake"},
+                        {"type":"text/html","value":"Stops"}
+                      ]}},
+                      {"type":"teststeps","attributes":{"keys":["step","description","expectedResult"],"values":[
+                        {"type":"text/html","value":"Power on"},
+                        {"type":"text/html","value":"Apply ignition"},
+                        {"type":"text/html","value":"Standby"}
+                      ]}}
+                    ]}
+                    """))
+        .andRespond(
+            withStatus(HttpStatus.CREATED)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"data\":[]}"));
+
+    TestStepTools tools = new TestStepTools(http.client);
+    String version = tools.getTestSteps("ELK", "ELK-1").stepsVersion();
+    TestStepsAppended stored =
+        (TestStepsAppended)
+            tools.setTestSteps(
+                "ELK",
+                "ELK-1",
+                List.of(step("Power on", "Apply ignition", "Standby")),
+                version,
+                false);
+
+    assertEquals(3, stored.stepCount());
+    assertEquals(2, stored.existingCount());
+    assertFalse(stored.alreadyStored());
     http.server.verify();
   }
 

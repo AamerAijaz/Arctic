@@ -233,14 +233,17 @@ public final class PolarionClient {
     }
     allowlist.assertAllowed(projectId);
     String local = localId(workItemId);
+
     List<TestStepRows.Row> rows = fetchTestStepRows(projectId, local);
     List<String> columns = TestStepRows.columnsOf(rows);
+
     if (columns.isEmpty()) {
       columns = configuredColumns(projectId);
     }
     if (columns.isEmpty()) {
       columns = siblingColumns(projectId, local);
     }
+
     List<Map<String, String>> steps = TestStepRows.toSteps(columns, rows);
     return new TestStepTable(
         projectId, projectId + "/" + local, columns, steps, TestStepRows.version(columns, steps));
@@ -296,18 +299,20 @@ public final class PolarionClient {
           current.steps().size(),
           alreadyStored);
     }
+    
     if (alreadyStored) {
       return stored(projectId, current, current.steps().size(), true, current.stepsVersion());
     }
-    exchange(
-        HttpMethod.POST,
-        testStepsPath(projectId, local),
-        Map.of(),
-        writeJson(TestStepRows.postBody(current.columns(), aligned)),
-        null);
+    
     List<Map<String, String>> combined = new ArrayList<>();
     combined.addAll(current.steps());
     combined.addAll(aligned);
+    replaceTestSteps(
+        projectId,
+        local,
+        current.steps().size(),
+        writeJson(TestStepRows.postBody(current.columns(), combined)));
+        
     return stored(
         projectId,
         current,
@@ -408,6 +413,15 @@ public final class PolarionClient {
                 null,
                 null),
             "test steps"));
+  }
+
+  private void replaceTestSteps(
+      String projectId, String workItemId, int existingCount, String body) {
+    String path = testStepsPath(projectId, workItemId);
+    for (int index = existingCount; index >= 1; index--) {
+      exchange(HttpMethod.DELETE, path + "/" + index, Map.of(), null, null);
+    }
+    exchange(HttpMethod.POST, path, Map.of(), body, null);
   }
 
   private static String testStepsPath(String projectId, String workItemId) {

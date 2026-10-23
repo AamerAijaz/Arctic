@@ -33,8 +33,9 @@ public final class TestStepTools {
       HTML. Default dry_run=true previews the rows and does not write;
       set dry_run=false to append. When the table already has rows, pass
       expected_version from get_test_steps. A repeat of the same rows
-      does not append them again. This tool does not delete or rewrite
-      existing steps.\
+      does not append them again. Polarion cannot append in place: a
+      write deletes the current rows and posts them back with the new
+      ones. Blank cells are stored as empty text.\
       """;
 
   private final PolarionClient client;

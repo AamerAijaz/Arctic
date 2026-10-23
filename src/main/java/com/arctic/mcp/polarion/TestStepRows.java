@@ -20,11 +20,11 @@ final class TestStepRows {
 
   static List<Row> parse(JsonNode payload) {
     if (payload == null || !payload.isObject()) {
-      throw new PolarionException("Polarion returned an unexpected test steps response.");
+      throw new PolarionException("Polarion test steps response was not a JSON object.");
     }
     JsonNode data = payload.get("data");
     if (data == null || !data.isArray()) {
-      throw new PolarionException("Polarion returned an unexpected test steps response.");
+      throw new PolarionException("Polarion test steps response had no data array.");
     }
     List<Row> rows = new ArrayList<>();
     for (JsonNode item : data) {
@@ -159,28 +159,29 @@ final class TestStepRows {
 
   private static Row parseRow(JsonNode item) {
     if (item == null || !item.isObject()) {
-      throw new PolarionException("Polarion returned an unexpected test steps response.");
+      throw new PolarionException("Polarion test step was not a JSON object.");
     }
     JsonNode attributes = item.get("attributes");
     if (attributes == null || !attributes.isObject()) {
-      throw new PolarionException("Polarion returned an unexpected test steps response.");
+      throw new PolarionException("Polarion test step had no attributes object.");
     }
     List<String> keys = strings(attributes.get("keys"));
     List<String> values = textValues(attributes.get("values"));
     if (keys.size() != values.size()) {
-      throw new PolarionException("Polarion returned an unexpected test steps response.");
+      throw new PolarionException(
+          "Polarion test step had " + keys.size() + " keys and " + values.size() + " values.");
     }
     return new Row(keys, values);
   }
 
   private static List<String> strings(JsonNode node) {
     if (node == null || !node.isArray()) {
-      throw new PolarionException("Polarion returned an unexpected test steps response.");
+      throw new PolarionException("Polarion test step keys were not an array.");
     }
     List<String> values = new ArrayList<>();
     for (JsonNode child : node) {
       if (child == null || !child.isString()) {
-        throw new PolarionException("Polarion returned an unexpected test steps response.");
+        throw new PolarionException("Polarion test step key was not a string.");
       }
       values.add(child.asString());
     }
@@ -189,17 +190,22 @@ final class TestStepRows {
 
   private static List<String> textValues(JsonNode node) {
     if (node == null || !node.isArray()) {
-      throw new PolarionException("Polarion returned an unexpected test steps response.");
+      throw new PolarionException("Polarion test step values were not an array.");
     }
     List<String> values = new ArrayList<>();
     for (JsonNode child : node) {
-      if (child == null
-          || !child.isObject()
-          || !child.hasNonNull("value")
-          || !child.get("value").isString()) {
-        throw new PolarionException("Polarion returned an unexpected test steps response.");
+      if (child == null || !child.isObject()) {
+        throw new PolarionException("Polarion test step value was not a text object.");
       }
-      values.add(child.get("value").asString());
+      JsonNode value = child.get("value");
+      if (value == null || value.isNull() || value.isMissingNode()) {
+        values.add("");
+        continue;
+      }
+      if (!value.isString()) {
+        throw new PolarionException("Polarion test step value was not text.");
+      }
+      values.add(value.asString());
     }
     return List.copyOf(values);
   }

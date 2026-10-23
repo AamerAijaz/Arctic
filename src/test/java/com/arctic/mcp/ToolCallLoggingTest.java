@@ -52,6 +52,8 @@ class ToolCallLoggingTest {
             });
 
     assertTrue(log.contains("tool whoami failed in "));
+    assertTrue(log.contains("Polarion rejected the token"));
+    assertTrue(log.contains("thrown java.lang.RuntimeException: Polarion rejected the token"));
     assertFalse(log.contains(TOKEN));
   }
 
@@ -87,6 +89,13 @@ class ToolCallLoggingTest {
       StringBuilder text = new StringBuilder();
       for (ILoggingEvent event : appender.list) {
         text.append(event.getFormattedMessage()).append('\n');
+        if (event.getThrowableProxy() != null) {
+          text.append("thrown ")
+              .append(event.getThrowableProxy().getClassName())
+              .append(": ")
+              .append(event.getThrowableProxy().getMessage())
+              .append('\n');
+        }
       }
       return text.toString();
     } finally {

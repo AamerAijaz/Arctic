@@ -8,7 +8,10 @@ import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.ai.tool.metadata.ToolMetadata;
 
-/** Logs each tool name, outcome, and duration. Arguments and results stay out of the log. */
+/**
+ * Logs each tool name, outcome, and duration. Arguments and results stay out of the log. A failed
+ * call also logs the exception.
+ */
 final class ToolCallLogging implements ToolCallbackProvider {
 
   private static final Logger log = LoggerFactory.getLogger(ToolCallLogging.class);
@@ -53,7 +56,12 @@ final class ToolCallLogging implements ToolCallbackProvider {
         log.info("tool {} succeeded in {} ms", name(), elapsedMillis(started));
         return result;
       } catch (RuntimeException exception) {
-        log.info("tool {} failed in {} ms", name(), elapsedMillis(started));
+        log.info(
+            "tool {} failed in {} ms: {}",
+            name(),
+            elapsedMillis(started),
+            exception.getMessage(),
+            exception);
         throw exception;
       }
     }
