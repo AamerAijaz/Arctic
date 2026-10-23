@@ -14,6 +14,8 @@ Today the stack supports:
 - **`create_work_item`** — create one work item (`dry_run` by default)
 - **`update_work_item`** — update title, description, status, and/or type (`change_type_to`, `dry_run` by default)
 - **`get_work_item`** — read a work item back after create or update
+- **`get_test_steps`** — read a test case's Test Steps columns and rows. Column names come from the project, and an empty table uses the `testing/test-step-keys` enumeration
+- **`set_test_steps`** — append rows under the existing Test Steps table (`dry_run` by default). Existing rows stay
 - **`list_link_roles`** — link-role ids and `linkRules` for a project
 - **`list_work_item_links` / `list_work_item_backlinks`** — outgoing and incoming links
 - **`create_work_item_link` / `delete_work_item_link`** — add or remove a link (`dry_run` by default)
@@ -236,7 +238,7 @@ Reload MCP in Cursor after the Java MCP Server is listening. Example prompts:
 
 Word import needs a filesystem path the MCP Server can read (for example the repo root on your machine). Browsers and chat UIs do not upload the `.docx` through MCP; put the file where the server process can open it and pass that path to `import_document`.
 
-The `whoami` and `list_projects` tools return ids and names, not the token. `create_work_item`, `create_work_item_type`, `update_work_item`, `create_work_item_link`, `delete_work_item_link`, `create_document`, `create_document_work_item`, `create_requirement_work_item`, `convert_heading_to_work_item`, `convert_headings_to_work_items`, `import_document`, `promote_document_requirements`, `assign_work_item`, and `assign_work_items_round_robin` default to `dry_run=true`; only set `dry_run=false` when you intend to create or change data. `list_requirement_blocks` is read-only. Call `list_work_item_types` before creating or promoting work items. Call `list_link_roles` before linking or creating a document. Call `list_project_users` before assigning.
+The `whoami` and `list_projects` tools return ids and names, not the token. `create_work_item`, `create_work_item_type`, `update_work_item`, `set_test_steps`, `create_work_item_link`, `delete_work_item_link`, `create_document`, `create_document_work_item`, `create_requirement_work_item`, `convert_heading_to_work_item`, `convert_headings_to_work_items`, `import_document`, `promote_document_requirements`, `assign_work_item`, and `assign_work_items_round_robin` default to `dry_run=true`; only set `dry_run=false` when you intend to create or change data. `list_requirement_blocks` is read-only. Call `list_work_item_types` before creating or promoting work items. Call `list_link_roles` before linking or creating a document. Call `list_project_users` before assigning. Call `get_test_steps` before `set_test_steps`. `set_test_steps` appends rows and leaves the rows already on the work item in place. Column names come from that project.
 
 ## Claude Code and Codex
 

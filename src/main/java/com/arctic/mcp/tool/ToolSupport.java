@@ -4,13 +4,13 @@ import com.arctic.mcp.polarion.PolarionException;
 
 final class ToolSupport {
 
-    private ToolSupport() {}
+  private ToolSupport() {}
 
-    static RuntimeException failed(PolarionException exception) {
-        return new RuntimeException(exception.getMessage());
-    }
+  static RuntimeException failed(PolarionException exception) {
+    return new RuntimeException(exception.getMessage());
+  }
 
-    static boolean dryRun(Boolean dryRun) {
-        return dryRun == null || dryRun;
-    }
+  static boolean dryRun(Boolean dryRun) {
+    return dryRun == null || dryRun;
+  }
 }

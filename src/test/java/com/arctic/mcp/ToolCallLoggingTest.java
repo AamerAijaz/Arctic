@@ -17,70 +17,81 @@ import org.springframework.ai.tool.definition.ToolDefinition;
 
 class ToolCallLoggingTest {
 
-    private static final String TOKEN = "super-secret-token";
+  private static final String TOKEN = "super-secret-token";
 
-    @Test
-    void successLogNamesTheToolAndOmitsTheInput() {
-        ToolCallback tool = logged(input -> "{\"id\":\"alice\"}");
+  @Test
+  void successLogNamesTheToolAndOmitsTheInput() {
+    ToolCallback tool = logged(input -> "{\"id\":\"alice\"}");
 
-        String log = capture(() -> {
-            String body = tool.call("{\"note\":\"" + TOKEN + "\"}");
-            assertEquals("{\"id\":\"alice\"}", body);
-        });
+    String log =
+        capture(
+            () -> {
+              String body = tool.call("{\"note\":\"" + TOKEN + "\"}");
+              assertEquals("{\"id\":\"alice\"}", body);
+            });
 
-        assertTrue(log.contains("tool whoami succeeded in "));
-        assertTrue(log.contains(" ms"));
-        assertFalse(log.contains(TOKEN));
-        assertFalse(log.contains("alice"));
-    }
+    assertTrue(log.contains("tool whoami succeeded in "));
+    assertTrue(log.contains(" ms"));
+    assertFalse(log.contains(TOKEN));
+    assertFalse(log.contains("alice"));
+  }
 
-    @Test
-    void failureLogNamesTheToolAndOmitsTheInput() {
-        ToolCallback tool = logged(input -> {
-            throw new RuntimeException("Polarion rejected the token");
-        });
+  @Test
+  void failureLogNamesTheToolAndOmitsTheInput() {
+    ToolCallback tool =
+        logged(
+            input -> {
+              throw new RuntimeException("Polarion rejected the token");
+            });
 
-        String log = capture(() -> {
-            RuntimeException error = assertThrows(RuntimeException.class, () -> tool.call(TOKEN));
-            assertEquals("Polarion rejected the token", error.getMessage());
-        });
+    String log =
+        capture(
+            () -> {
+              RuntimeException error = assertThrows(RuntimeException.class, () -> tool.call(TOKEN));
+              assertEquals("Polarion rejected the token", error.getMessage());
+            });
 
-        assertTrue(log.contains("tool whoami failed in "));
-        assertFalse(log.contains(TOKEN));
-    }
+    assertTrue(log.contains("tool whoami failed in "));
+    assertFalse(log.contains(TOKEN));
+  }
 
-    private static ToolCallback logged(Function<String, String> behavior) {
-        ToolCallback delegate = new ToolCallback() {
-            @Override
-            public ToolDefinition getToolDefinition() {
-                return ToolDefinition.builder().name("whoami").description("who").inputSchema("{}").build();
-            }
+  private static ToolCallback logged(Function<String, String> behavior) {
+    ToolCallback delegate =
+        new ToolCallback() {
+          @Override
+          public ToolDefinition getToolDefinition() {
+            return ToolDefinition.builder()
+                .name("whoami")
+                .description("who")
+                .inputSchema("{}")
+                .build();
+          }
 
-            @Override
-            public String call(String toolInput) {
-                return behavior.apply(toolInput);
-            }
+          @Override
+          public String call(String toolInput) {
+            return behavior.apply(toolInput);
+          }
         };
-        return new ToolCallLogging(() -> new ToolCallback[] {delegate}).getToolCallbacks()[0];
-    }
+    return new ToolCallLogging(() -> new ToolCallback[] {delegate}).getToolCallbacks()[0];
+  }
 
-    private static String capture(Runnable action) {
-        Logger logger = (Logger) LoggerFactory.getLogger(ToolCallLogging.class);
-        Level previous = logger.getLevel();
-        ListAppender<ILoggingEvent> appender = new ListAppender<>();
-        appender.start();
-        logger.addAppender(appender);
-        logger.setLevel(Level.INFO);
-        try {
-            action.run();
-            StringBuilder text = new StringBuilder();
-            for (ILoggingEvent event : appender.list) {
-                text.append(event.getFormattedMessage()).append('\n');
-            }
-            return text.toString();
-        } finally {
-            logger.detachAppender(appender);
-            logger.setLevel(previous);
-        }
+  private static String capture(Runnable action) {
+    Logger logger = (Logger) LoggerFactory.getLogger(ToolCallLogging.class);
+    Level previous = logger.getLevel();
+    ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    appender.start();
+    logger.addAppender(appender);
+    logger.setLevel(Level.INFO);
+    try {
+      action.run();
+      StringBuilder text = new StringBuilder();
+      for (ILoggingEvent event : appender.list) {
+        text.append(event.getFormattedMessage()).append('\n');
+      }
+      return text.toString();
+    } finally {
+      logger.detachAppender(appender);
+      logger.setLevel(previous);
     }
+  }
 }

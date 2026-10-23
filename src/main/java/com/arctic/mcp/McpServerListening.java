@@ -10,13 +10,12 @@ import org.springframework.stereotype.Component;
 @Component
 final class McpServerListening {
 
-    private static final Logger log = LoggerFactory.getLogger(McpServerListening.class);
+  private static final Logger log = LoggerFactory.getLogger(McpServerListening.class);
 
-    @EventListener
-    void onListening(WebServerInitializedEvent event) {
-        String address = event.getApplicationContext()
-                .getEnvironment()
-                .getProperty("server.address", "127.0.0.1");
-        log.info("MCP Server listening on http://{}:{}/mcp", address, event.getWebServer().getPort());
-    }
+  @EventListener
+  void onListening(WebServerInitializedEvent event) {
+    String address =
+        event.getApplicationContext().getEnvironment().getProperty("server.address", "127.0.0.1");
+    log.info("MCP Server listening on http://{}:{}/mcp", address, event.getWebServer().getPort());
+  }
 }

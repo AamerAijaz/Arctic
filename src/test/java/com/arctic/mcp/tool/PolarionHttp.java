@@ -17,41 +17,42 @@ import org.springframework.web.client.RestClient;
 
 final class PolarionHttp {
 
-    static final String TOKEN = "super-secret-token";
-    static final String ROOT = "https://polarion.example.com/polarion/rest/v1";
+  static final String TOKEN = "super-secret-token";
+  static final String ROOT = "https://polarion.example.com/polarion/rest/v1";
 
-    final MockRestServiceServer server;
-    final PolarionClient client;
+  final MockRestServiceServer server;
+  final PolarionClient client;
 
-    private PolarionHttp(MockRestServiceServer server, PolarionClient client) {
-        this.server = server;
-        this.client = client;
-    }
+  private PolarionHttp(MockRestServiceServer server, PolarionClient client) {
+    this.server = server;
+    this.client = client;
+  }
 
-    static PolarionHttp open() {
-        return open(ProjectAllowlist.unrestricted());
-    }
+  static PolarionHttp open() {
+    return open(ProjectAllowlist.unrestricted());
+  }
 
-    static PolarionHttp open(ProjectAllowlist allowlist) {
-        RestClient.Builder builder = RestClient.builder();
-        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        PolarionCredentialsSource source = () -> new PolarionCredentials(ROOT, TOKEN);
-        return new PolarionHttp(server, new PolarionClient(source, builder.build(), allowlist));
-    }
+  static PolarionHttp open(ProjectAllowlist allowlist) {
+    RestClient.Builder builder = RestClient.builder();
+    MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+    PolarionCredentialsSource source = () -> new PolarionCredentials(ROOT, TOKEN);
+    return new PolarionHttp(server, new PolarionClient(source, builder.build(), allowlist));
+  }
 
-    static RequestMatcher query(String name, String value) {
-        return (ClientHttpRequest request) -> {
-            String raw = request.getURI().getRawQuery();
-            Map<String, String> params = new LinkedHashMap<>();
-            if (raw != null) {
-                for (String pair : raw.split("&")) {
-                    String[] parts = pair.split("=", 2);
-                    String key = URLDecoder.decode(parts[0], StandardCharsets.UTF_8);
-                    String decoded = parts.length == 1 ? "" : URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
-                    params.put(key, decoded);
-                }
-            }
-            assertEquals(value, params.get(name), raw);
-        };
-    }
+  static RequestMatcher query(String name, String value) {
+    return (ClientHttpRequest request) -> {
+      String raw = request.getURI().getRawQuery();
+      Map<String, String> params = new LinkedHashMap<>();
+      if (raw != null) {
+        for (String pair : raw.split("&")) {
+          String[] parts = pair.split("=", 2);
+          String key = URLDecoder.decode(parts[0], StandardCharsets.UTF_8);
+          String decoded =
+              parts.length == 1 ? "" : URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
+          params.put(key, decoded);
+        }
+      }
+      assertEquals(value, params.get(name), raw);
+    };
+  }
 }

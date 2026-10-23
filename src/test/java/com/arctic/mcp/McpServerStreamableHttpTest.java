@@ -39,105 +39,110 @@ import org.springframework.web.client.RestClient;
 @SpringBootTest(classes = ArcticMcpApplication.class, webEnvironment = WebEnvironment.RANDOM_PORT)
 class McpServerStreamableHttpTest {
 
-    private static final String TOKEN = "super-secret-token";
-    private static final RestClient.Builder HTTP = RestClient.builder();
-    private static final MockRestServiceServer POLARION = MockRestServiceServer.bindTo(HTTP).build();
+  private static final String TOKEN = "super-secret-token";
+  private static final RestClient.Builder HTTP = RestClient.builder();
+  private static final MockRestServiceServer POLARION = MockRestServiceServer.bindTo(HTTP).build();
 
-    @LocalServerPort
-    private int port;
+  @LocalServerPort private int port;
 
-    @Autowired
-    private ServletWebServerApplicationContext serverContext;
+  @Autowired private ServletWebServerApplicationContext serverContext;
 
-    @TestBean(name = "polarionCredentialsSource", methodName = "credentials")
-    @SuppressWarnings("unused")
-    private PolarionCredentialsSource polarionCredentialsSource;
+  @TestBean(name = "polarionCredentialsSource", methodName = "credentials")
+  @SuppressWarnings("unused")
+  private PolarionCredentialsSource polarionCredentialsSource;
 
-    @TestBean(name = "polarionRestClient", methodName = "polarionHttp")
-    @SuppressWarnings("unused")
-    private RestClient polarionRestClient;
+  @TestBean(name = "polarionRestClient", methodName = "polarionHttp")
+  @SuppressWarnings("unused")
+  private RestClient polarionRestClient;
 
-    @Test
-    void hostListsWhoamiAndCallsItOnLoopback() {
-        POLARION.reset();
-        POLARION.expect(requestTo("https://polarion.example.com/polarion/rest/v1/user"))
-                .andExpect(method(HttpMethod.GET))
-                .andRespond(withSuccess(
-                        """
-                        {"data":{"type":"users","id":"alice","attributes":{"name":"Alice","email":"alice@example.com"}}}
-                        """,
-                        MediaType.APPLICATION_JSON));
+  @Test
+  void hostListsWhoamiAndCallsItOnLoopback() {
+    POLARION.reset();
+    POLARION
+        .expect(requestTo("https://polarion.example.com/polarion/rest/v1/user"))
+        .andExpect(method(HttpMethod.GET))
+        .andRespond(
+            withSuccess(
+                """
+                {"data":{"type":"users","id":"alice","attributes":{"name":"Alice","email":"alice@example.com"}}}
+                """,
+                MediaType.APPLICATION_JSON));
 
-        InetAddress listenAddress = listenAddress();
-        assertNotNull(listenAddress);
-        assertTrue(listenAddress.isLoopbackAddress());
+    InetAddress listenAddress = listenAddress();
+    assertNotNull(listenAddress);
+    assertTrue(listenAddress.isLoopbackAddress());
 
-        try (McpSyncClient client = McpClient.sync(
-                        HttpClientStreamableHttpTransport.builder("http://127.0.0.1:" + port)
-                                .endpoint("/mcp")
-                                .build())
-                .build()) {
-            client.initialize();
-            ListToolsResult listed = client.listTools();
-            assertEquals(
-                    Set.of(
-                            "whoami",
-                            "list_projects",
-                            "get_project",
-                            "list_work_items",
-                            "get_work_item",
-                            "create_work_item",
-                            "update_work_item",
-                            "list_work_item_types",
-                            "create_work_item_type",
-                            "list_link_roles",
-                            "list_work_item_links",
-                            "list_work_item_backlinks",
-                            "create_work_item_link",
-                            "delete_work_item_link",
-                            "list_documents",
-                            "get_document",
-                            "create_document",
-                            "import_document",
-                            "list_document_parts",
-                            "move_document_part",
-                            "delete_document_parts",
-                            "create_document_work_item",
-                            "create_requirement_work_item",
-                            "list_project_users",
-                            "assign_work_item"),
-                    listed.tools().stream().map(Tool::name).collect(Collectors.toSet()));
-            Tool whoami = listed.tools().stream()
-                    .filter(tool -> "whoami".equals(tool.name()))
-                    .findFirst()
-                    .orElseThrow(() -> new AssertionError("whoami was not listed: " + listed));
-            assertFalse(whoami.inputSchema().toString().toLowerCase().contains("token"));
+    try (McpSyncClient client =
+        McpClient.sync(
+                HttpClientStreamableHttpTransport.builder("http://127.0.0.1:" + port)
+                    .endpoint("/mcp")
+                    .build())
+            .build()) {
+      client.initialize();
+      ListToolsResult listed = client.listTools();
+      assertEquals(
+          Set.of(
+              "whoami",
+              "list_projects",
+              "get_project",
+              "list_work_items",
+              "get_work_item",
+              "create_work_item",
+              "update_work_item",
+              "list_work_item_types",
+              "create_work_item_type",
+              "list_link_roles",
+              "list_work_item_links",
+              "list_work_item_backlinks",
+              "create_work_item_link",
+              "delete_work_item_link",
+              "list_documents",
+              "get_document",
+              "create_document",
+              "import_document",
+              "list_document_parts",
+              "move_document_part",
+              "delete_document_parts",
+              "create_document_work_item",
+              "create_requirement_work_item",
+              "list_project_users",
+              "assign_work_item",
+              "get_test_steps",
+              "set_test_steps"),
+          listed.tools().stream().map(Tool::name).collect(Collectors.toSet()));
+      Tool whoami =
+          listed.tools().stream()
+              .filter(tool -> "whoami".equals(tool.name()))
+              .findFirst()
+              .orElseThrow(() -> new AssertionError("whoami was not listed: " + listed));
+      assertFalse(whoami.inputSchema().toString().toLowerCase().contains("token"));
 
-            CallToolResult result = client.callTool(
-                    CallToolRequest.builder("whoami").arguments(Map.of()).build());
-            assertFalse(Boolean.TRUE.equals(result.isError()));
-            String payload = result.toString();
-            assertTrue(payload.contains("\"id\":\"alice\"") || payload.contains("\"id\": \"alice\""), payload);
-            assertTrue(payload.contains("Alice"), payload);
-            assertTrue(payload.contains("alice@example.com"), payload);
-            assertFalse(payload.contains(TOKEN), payload);
-        }
-
-        POLARION.verify();
+      CallToolResult result =
+          client.callTool(CallToolRequest.builder("whoami").arguments(Map.of()).build());
+      assertFalse(Boolean.TRUE.equals(result.isError()));
+      String payload = result.toString();
+      assertTrue(
+          payload.contains("\"id\":\"alice\"") || payload.contains("\"id\": \"alice\""), payload);
+      assertTrue(payload.contains("Alice"), payload);
+      assertTrue(payload.contains("alice@example.com"), payload);
+      assertFalse(payload.contains(TOKEN), payload);
     }
 
-    static PolarionCredentialsSource credentials() {
-        return () -> new PolarionCredentials("https://polarion.example.com/polarion/rest/v1", TOKEN);
-    }
+    POLARION.verify();
+  }
 
-    static RestClient polarionHttp() {
-        return HTTP.build();
-    }
+  static PolarionCredentialsSource credentials() {
+    return () -> new PolarionCredentials("https://polarion.example.com/polarion/rest/v1", TOKEN);
+  }
 
-    private InetAddress listenAddress() {
-        TomcatWebServer tomcat = (TomcatWebServer) serverContext.getWebServer();
-        Connector connector = tomcat.getTomcat().getConnector();
-        AbstractProtocol<?> protocol = (AbstractProtocol<?>) connector.getProtocolHandler();
-        return protocol.getAddress();
-    }
+  static RestClient polarionHttp() {
+    return HTTP.build();
+  }
+
+  private InetAddress listenAddress() {
+    TomcatWebServer tomcat = (TomcatWebServer) serverContext.getWebServer();
+    Connector connector = tomcat.getTomcat().getConnector();
+    AbstractProtocol<?> protocol = (AbstractProtocol<?>) connector.getProtocolHandler();
+    return protocol.getAddress();
+  }
 }

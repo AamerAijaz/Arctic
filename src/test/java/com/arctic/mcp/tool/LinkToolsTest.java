@@ -26,154 +26,188 @@ import org.springframework.http.MediaType;
 
 class LinkToolsTest {
 
-    @Test
-    void listLinkRolesReturnsRules() {
-        PolarionHttp http = PolarionHttp.open();
-        http.server
-                .expect(requestTo(Matchers.startsWith(
-                        PolarionHttp.ROOT + "/projects/ELK/enumerations/~/workitem-link-role/~?")))
-                .andExpect(method(HttpMethod.GET))
-                .andExpect(PolarionHttp.query("fields[enumerations]", "@all"))
-                .andRespond(withSuccess(
-                        """
-                        {"data":{"type":"enumerations","attributes":{"options":[
-                          {"id":"implements","name":"implements","oppositeName":"is implemented by",
-                           "linkRules":[{"fromTypes":["task"],"toTypes":["requirement"]}]}
-                        ]}}}
-                        """,
-                        MediaType.APPLICATION_JSON));
+  @Test
+  void listLinkRolesReturnsRules() {
+    PolarionHttp http = PolarionHttp.open();
+    http.server
+        .expect(
+            requestTo(
+                Matchers.startsWith(
+                    PolarionHttp.ROOT + "/projects/ELK/enumerations/~/workitem-link-role/~?")))
+        .andExpect(method(HttpMethod.GET))
+        .andExpect(PolarionHttp.query("fields[enumerations]", "@all"))
+        .andRespond(
+            withSuccess(
+                """
+                {"data":{"type":"enumerations","attributes":{"options":[
+                  {"id":"implements","name":"implements","oppositeName":"is implemented by",
+                   "linkRules":[{"fromTypes":["task"],"toTypes":["requirement"]}]}
+                ]}}}
+                """,
+                MediaType.APPLICATION_JSON));
 
-        LinkRole role = new LinkTools(http.client).listLinkRoles("ELK").roles().get(0);
+    LinkRole role = new LinkTools(http.client).listLinkRoles("ELK").roles().get(0);
 
-        assertEquals("implements", role.id());
-        assertEquals("is implemented by", role.oppositeName());
-        assertEquals(List.of("task"), role.linkRules().get(0).get("fromTypes"));
-        http.server.verify();
-    }
+    assertEquals("implements", role.id());
+    assertEquals("is implemented by", role.oppositeName());
+    assertEquals(List.of("task"), role.linkRules().get(0).get("fromTypes"));
+    http.server.verify();
+  }
 
-    @Test
-    void listWorkItemLinksIncludesTheTargetTitle() {
-        PolarionHttp http = PolarionHttp.open();
-        http.server
-                .expect(requestTo(Matchers.startsWith(PolarionHttp.ROOT + "/projects/ELK/workitems/ELK-42/linkedworkitems?")))
-                .andRespond(withSuccess(
-                        """
-                        {"data":[{"type":"linkedworkitems","id":"ELK/ELK-42/implements/ELK/ELK-12","attributes":{"role":"implements"},
-                          "relationships":{"workItem":{"data":{"type":"workitems","id":"ELK/ELK-12"}}}}],
-                         "included":[{"type":"workitems","id":"ELK/ELK-12","attributes":{"title":"Requirement"}}]}
-                        """,
-                        MediaType.APPLICATION_JSON));
+  @Test
+  void listWorkItemLinksIncludesTheTargetTitle() {
+    PolarionHttp http = PolarionHttp.open();
+    http.server
+        .expect(
+            requestTo(
+                Matchers.startsWith(
+                    PolarionHttp.ROOT + "/projects/ELK/workitems/ELK-42/linkedworkitems?")))
+        .andRespond(
+            withSuccess(
+                """
+                {"data":[{"type":"linkedworkitems","id":"ELK/ELK-42/implements/ELK/ELK-12","attributes":{"role":"implements"},
+                  "relationships":{"workItem":{"data":{"type":"workitems","id":"ELK/ELK-12"}}}}],
+                 "included":[{"type":"workitems","id":"ELK/ELK-12","attributes":{"title":"Requirement"}}]}
+                """,
+                MediaType.APPLICATION_JSON));
 
-        WorkItemLink link = new LinkTools(http.client).listWorkItemLinks("ELK", "ELK-42").links().get(0);
+    WorkItemLink link =
+        new LinkTools(http.client).listWorkItemLinks("ELK", "ELK-42").links().get(0);
 
-        assertEquals("implements", link.role());
-        assertEquals("ELK/ELK-12", link.targetId());
-        assertEquals("Requirement", link.targetTitle());
-    }
+    assertEquals("implements", link.role());
+    assertEquals("ELK/ELK-12", link.targetId());
+    assertEquals("Requirement", link.targetTitle());
+  }
 
-    @Test
-    void listBacklinksUsesTheBacklinkCollection() {
-        PolarionHttp http = PolarionHttp.open();
-        http.server
-                .expect(requestTo(Matchers.startsWith(PolarionHttp.ROOT + "/projects/ELK/workitems/ELK-12/backlinkedworkitems?")))
-                .andRespond(withSuccess("{\"data\":[]}", MediaType.APPLICATION_JSON));
+  @Test
+  void listBacklinksUsesTheBacklinkCollection() {
+    PolarionHttp http = PolarionHttp.open();
+    http.server
+        .expect(
+            requestTo(
+                Matchers.startsWith(
+                    PolarionHttp.ROOT + "/projects/ELK/workitems/ELK-12/backlinkedworkitems?")))
+        .andRespond(withSuccess("{\"data\":[]}", MediaType.APPLICATION_JSON));
 
-        assertTrue(new LinkTools(http.client).listWorkItemBacklinks("ELK", "ELK-12").links().isEmpty());
-        http.server.verify();
-    }
+    assertTrue(new LinkTools(http.client).listWorkItemBacklinks("ELK", "ELK-12").links().isEmpty());
+    http.server.verify();
+  }
 
-    @Test
-    void createLinkDryRunReturnsThePostBody() {
-        PolarionHttp http = PolarionHttp.open();
+  @Test
+  void createLinkDryRunReturnsThePostBody() {
+    PolarionHttp http = PolarionHttp.open();
 
-        WorkItemLinkPreview preview =
-                (WorkItemLinkPreview) new LinkTools(http.client).createWorkItemLink("ELK", "ELK-42", "ELK-12", "implements", null, null);
+    WorkItemLinkPreview preview =
+        (WorkItemLinkPreview)
+            new LinkTools(http.client)
+                .createWorkItemLink("ELK", "ELK-42", "ELK-12", "implements", null, null);
 
-        assertTrue(preview.dryRun());
-        assertEquals(
+    assertTrue(preview.dryRun());
+    assertEquals(
+        Map.of(
+            "data",
+            List.of(
                 Map.of(
-                        "data",
-                        List.of(Map.of(
-                                "type",
-                                "linkedworkitems",
-                                "attributes",
-                                Map.of("role", "implements"),
-                                "relationships",
-                                Map.of(
-                                        "workItem",
-                                        Map.of("data", Map.of("type", "workitems", "id", "ELK/ELK-12")))))),
-                preview.body());
-        http.server.verify();
-    }
+                    "type",
+                    "linkedworkitems",
+                    "attributes",
+                    Map.of("role", "implements"),
+                    "relationships",
+                    Map.of(
+                        "workItem",
+                        Map.of("data", Map.of("type", "workitems", "id", "ELK/ELK-12")))))),
+        preview.body());
+    http.server.verify();
+  }
 
-    @Test
-    void createLinkRefusesATargetProjectOutsideTheAllowlist() {
-        PolarionHttp http = PolarionHttp.open(ProjectAllowlist.parse("ELK"));
+  @Test
+  void createLinkRefusesATargetProjectOutsideTheAllowlist() {
+    PolarionHttp http = PolarionHttp.open(ProjectAllowlist.parse("ELK"));
 
-        RuntimeException error = assertThrows(
-                RuntimeException.class,
-                () -> new LinkTools(http.client).createWorkItemLink("ELK", "ELK-42", "OTHER-1", "implements", "OTHER", false));
+    RuntimeException error =
+        assertThrows(
+            RuntimeException.class,
+            () ->
+                new LinkTools(http.client)
+                    .createWorkItemLink("ELK", "ELK-42", "OTHER-1", "implements", "OTHER", false));
 
-        assertTrue(error.getMessage().contains("Project OTHER is not in POLARION_PROJECT_ALLOWLIST."));
-        http.server.verify();
-    }
+    assertTrue(error.getMessage().contains("Project OTHER is not in POLARION_PROJECT_ALLOWLIST."));
+    http.server.verify();
+  }
 
-    @Test
-    void createLinkApplyReturnsTheLinkId() {
-        PolarionHttp http = PolarionHttp.open();
-        http.server
-                .expect(requestTo(PolarionHttp.ROOT + "/projects/ELK/workitems/ELK-42/linkedworkitems"))
-                .andExpect(method(HttpMethod.POST))
-                .andRespond(withSuccess(
-                        """
-                        {"data":[{"type":"linkedworkitems","id":"ELK/ELK-42/implements/ELK/ELK-12"}]}
-                        """,
-                        MediaType.APPLICATION_JSON));
+  @Test
+  void createLinkApplyReturnsTheLinkId() {
+    PolarionHttp http = PolarionHttp.open();
+    http.server
+        .expect(requestTo(PolarionHttp.ROOT + "/projects/ELK/workitems/ELK-42/linkedworkitems"))
+        .andExpect(method(HttpMethod.POST))
+        .andRespond(
+            withSuccess(
+                """
+                {"data":[{"type":"linkedworkitems","id":"ELK/ELK-42/implements/ELK/ELK-12"}]}
+                """,
+                MediaType.APPLICATION_JSON));
 
-        CreatedWorkItemLink created = (CreatedWorkItemLink)
-                new LinkTools(http.client).createWorkItemLink("ELK", "ELK-42", "ELK-12", "implements", null, false);
+    CreatedWorkItemLink created =
+        (CreatedWorkItemLink)
+            new LinkTools(http.client)
+                .createWorkItemLink("ELK", "ELK-42", "ELK-12", "implements", null, false);
 
-        assertEquals("ELK/ELK-42/implements/ELK/ELK-12", created.id());
-        http.server.verify();
-    }
+    assertEquals("ELK/ELK-42/implements/ELK/ELK-12", created.id());
+    http.server.verify();
+  }
 
-    @Test
-    void deleteLinkDryRunReturnsTheDeletePath() {
-        PolarionHttp http = PolarionHttp.open();
+  @Test
+  void deleteLinkDryRunReturnsTheDeletePath() {
+    PolarionHttp http = PolarionHttp.open();
 
-        WorkItemLinkDeletePreview preview = (WorkItemLinkDeletePreview)
-                new LinkTools(http.client).deleteWorkItemLink("ELK", "ELK-42", "ELK-12", "implements", null, null);
+    WorkItemLinkDeletePreview preview =
+        (WorkItemLinkDeletePreview)
+            new LinkTools(http.client)
+                .deleteWorkItemLink("ELK", "ELK-42", "ELK-12", "implements", null, null);
 
-        assertEquals("/projects/ELK/workitems/ELK-42/linkedworkitems/implements/ELK/ELK-12", preview.path());
-        assertEquals("ELK", preview.targetProjectId());
-        http.server.verify();
-    }
+    assertEquals(
+        "/projects/ELK/workitems/ELK-42/linkedworkitems/implements/ELK/ELK-12", preview.path());
+    assertEquals("ELK", preview.targetProjectId());
+    http.server.verify();
+  }
 
-    @Test
-    void missingLinkIsNamedInTheError() {
-        PolarionHttp http = PolarionHttp.open();
-        http.server
-                .expect(requestTo(Matchers.startsWith(PolarionHttp.ROOT + "/projects/ELK/workitems/ELK-42/linkedworkitems/")))
-                .andRespond(withStatus(HttpStatus.NOT_FOUND).body("{\"errors\":[{\"title\":\"Not Found\"}]}"));
+  @Test
+  void missingLinkIsNamedInTheError() {
+    PolarionHttp http = PolarionHttp.open();
+    http.server
+        .expect(
+            requestTo(
+                Matchers.startsWith(
+                    PolarionHttp.ROOT + "/projects/ELK/workitems/ELK-42/linkedworkitems/")))
+        .andRespond(
+            withStatus(HttpStatus.NOT_FOUND).body("{\"errors\":[{\"title\":\"Not Found\"}]}"));
 
-        RuntimeException error = assertThrows(
-                RuntimeException.class,
-                () -> new LinkTools(http.client).deleteWorkItemLink("ELK", "ELK-42", "ELK-12", "implements", null, false));
+    RuntimeException error =
+        assertThrows(
+            RuntimeException.class,
+            () ->
+                new LinkTools(http.client)
+                    .deleteWorkItemLink("ELK", "ELK-42", "ELK-12", "implements", null, false));
 
-        assertEquals(
-                "Polarion request failed (404): Link not found: ELK/ELK-42/implements/ELK/ELK-12", error.getMessage());
-        assertNull(error.getCause());
-    }
+    assertEquals(
+        "Polarion request failed (404): Link not found: ELK/ELK-42/implements/ELK/ELK-12",
+        error.getMessage());
+    assertNull(error.getCause());
+  }
 
-    @Test
-    void rejectedTokenDoesNotEchoTheToken() {
-        PolarionHttp http = PolarionHttp.open();
-        http.server
-                .expect(requestTo(Matchers.startsWith(PolarionHttp.ROOT + "/projects/ELK/enumerations/")))
-                .andRespond(withStatus(HttpStatus.UNAUTHORIZED).body("{\"errors\":[{\"detail\":\"" + PolarionHttp.TOKEN + "\"}]}"));
+  @Test
+  void rejectedTokenDoesNotEchoTheToken() {
+    PolarionHttp http = PolarionHttp.open();
+    http.server
+        .expect(requestTo(Matchers.startsWith(PolarionHttp.ROOT + "/projects/ELK/enumerations/")))
+        .andRespond(
+            withStatus(HttpStatus.UNAUTHORIZED)
+                .body("{\"errors\":[{\"detail\":\"" + PolarionHttp.TOKEN + "\"}]}"));
 
-        RuntimeException error = assertThrows(RuntimeException.class, () -> new LinkTools(http.client).listLinkRoles("ELK"));
+    RuntimeException error =
+        assertThrows(RuntimeException.class, () -> new LinkTools(http.client).listLinkRoles("ELK"));
 
-        assertFalse(error.getMessage().contains(PolarionHttp.TOKEN));
-    }
+    assertFalse(error.getMessage().contains(PolarionHttp.TOKEN));
+  }
 }

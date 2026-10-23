@@ -6,6 +6,7 @@ import com.arctic.mcp.polarion.PolarionCredentialsSource;
 import com.arctic.mcp.tool.DocumentTools;
 import com.arctic.mcp.tool.LinkTools;
 import com.arctic.mcp.tool.ProjectTools;
+import com.arctic.mcp.tool.TestStepTools;
 import com.arctic.mcp.tool.UserTools;
 import com.arctic.mcp.tool.WhoamiTool;
 import com.arctic.mcp.tool.WorkItemTools;
@@ -20,61 +21,70 @@ import org.springframework.web.client.RestClient;
 @Configuration
 public class PolarionConfiguration {
 
-    @Bean
-    PolarionCredentialsSource polarionCredentialsSource() {
-        return new EnvironmentPolarionCredentialsSource(System.getenv(), Path.of(System.getProperty("user.dir")));
-    }
+  @Bean
+  PolarionCredentialsSource polarionCredentialsSource() {
+    return new EnvironmentPolarionCredentialsSource(
+        System.getenv(), Path.of(System.getProperty("user.dir")));
+  }
 
-    @Bean
-    RestClient polarionRestClient() {
-        return RestClient.builder().build();
-    }
+  @Bean
+  RestClient polarionRestClient() {
+    return RestClient.builder().build();
+  }
 
-    @Bean
-    PolarionClient polarionClient(PolarionCredentialsSource credentials, RestClient polarionRestClient) {
-        return new PolarionClient(credentials, polarionRestClient);
-    }
+  @Bean
+  PolarionClient polarionClient(
+      PolarionCredentialsSource credentials, RestClient polarionRestClient) {
+    return new PolarionClient(credentials, polarionRestClient);
+  }
 
-    @Bean
-    WhoamiTool whoamiTool(PolarionClient client) {
-        return new WhoamiTool(client);
-    }
+  @Bean
+  WhoamiTool whoamiTool(PolarionClient client) {
+    return new WhoamiTool(client);
+  }
 
-    @Bean
-    ProjectTools projectTools(PolarionClient client) {
-        return new ProjectTools(client);
-    }
+  @Bean
+  ProjectTools projectTools(PolarionClient client) {
+    return new ProjectTools(client);
+  }
 
-    @Bean
-    WorkItemTools workItemTools(PolarionClient client) {
-        return new WorkItemTools(client);
-    }
+  @Bean
+  WorkItemTools workItemTools(PolarionClient client) {
+    return new WorkItemTools(client);
+  }
 
-    @Bean
-    LinkTools linkTools(PolarionClient client) {
-        return new LinkTools(client);
-    }
+  @Bean
+  LinkTools linkTools(PolarionClient client) {
+    return new LinkTools(client);
+  }
 
-    @Bean
-    DocumentTools documentTools(PolarionClient client) {
-        return new DocumentTools(client);
-    }
+  @Bean
+  DocumentTools documentTools(PolarionClient client) {
+    return new DocumentTools(client);
+  }
 
-    @Bean
-    UserTools userTools(PolarionClient client) {
-        return new UserTools(client);
-    }
+  @Bean
+  UserTools userTools(PolarionClient client) {
+    return new UserTools(client);
+  }
 
-    @Bean
-    public ToolCallbackProvider arcticTools(
-            WhoamiTool whoami,
-            ProjectTools projects,
-            WorkItemTools workItems,
-            LinkTools links,
-            DocumentTools documents,
-            UserTools users) {
-        return new ToolCallLogging(MethodToolCallbackProvider.builder()
-                .toolObjects(whoami, projects, workItems, links, documents, users)
-                .build());
-    }
+  @Bean
+  TestStepTools testStepTools(PolarionClient client) {
+    return new TestStepTools(client);
+  }
+
+  @Bean
+  public ToolCallbackProvider arcticTools(
+      WhoamiTool whoami,
+      ProjectTools projects,
+      WorkItemTools workItems,
+      LinkTools links,
+      DocumentTools documents,
+      UserTools users,
+      TestStepTools testSteps) {
+    return new ToolCallLogging(
+        MethodToolCallbackProvider.builder()
+            .toolObjects(whoami, projects, workItems, links, documents, users, testSteps)
+            .build());
+  }
 }
