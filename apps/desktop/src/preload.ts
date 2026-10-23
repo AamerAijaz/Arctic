@@ -8,6 +8,9 @@ const host: HostBridge = {
   start: () => ipcRenderer.invoke("host:start"),
   open: (id) => ipcRenderer.invoke("host:open", id),
   send: (message) => ipcRenderer.invoke("host:send", message),
+  listMcpServers: () => ipcRenderer.invoke("host:mcp-list"),
+  addMcpServer: (name, url) => ipcRenderer.invoke("host:mcp-add", { name, url }),
+  removeMcpServer: (name) => ipcRenderer.invoke("host:mcp-remove", name),
 };
 
 contextBridge.exposeInMainWorld("host", host);

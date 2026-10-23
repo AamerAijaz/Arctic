@@ -1,10 +1,49 @@
 import { randomUUID } from "node:crypto";
 import type { ConversationRecord, ConversationStore } from "./conversation-store";
 
+export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+export type JsonObject = { [key: string]: Json };
+
+export type ToolDefinition = {
+  name: string;
+  description: string;
+  inputSchema: JsonObject;
+};
+
+export type ToolCatalog = {
+  tools: ToolDefinition[];
+  lines: string[];
+};
+
+export type ToolOutcome =
+  | { status: "ran"; text: string }
+  | { status: "failed"; text: string };
+
+export interface McpServer {
+  tools(): Promise<ToolCatalog>;
+  call(name: string, args: JsonObject): Promise<ToolOutcome>;
+}
+
+export type ToolEntry = {
+  role: "tool";
+  callId: string;
+  name: string;
+  arguments: JsonObject | null;
+  status: "ran" | "failed" | "held";
+  text: string;
+};
+
+export type ToolRequest = {
+  id: string;
+  name: string;
+  arguments: JsonObject | null;
+};
+
 export type TranscriptEntry =
   | { role: "person"; text: string }
   | { role: "assistant"; text: string }
-  | { role: "failure"; text: string };
+  | { role: "failure"; text: string }
+  | ToolEntry;
 
 export type ConversationSummary = {
   id: string;
@@ -23,6 +62,8 @@ export type ModelCall = {
   apiRoot: string;
   modelName: string;
   credential: string;
+  instructions: string;
+  tools: ToolDefinition[];
   messages: ConversationTurn[];
 };
 
@@ -30,7 +71,7 @@ export type ModelResult =
   | { kind: "assistant"; text: string }
   | { kind: "rejected" }
   | { kind: "unreachable" }
-  | { kind: "tool_call" };
+  | { kind: "tool_calls"; text: string; calls: ToolRequest[] };
 
 export interface Model {
   complete(call: ModelCall): Promise<ModelResult>;
@@ -44,6 +85,7 @@ export interface SecretStore {
 }
 
 const titleLimit = 60;
+const toolRoundLimit = 6;
 
 export class Host {
   private apiRoot = "";
@@ -55,8 +97,9 @@ export class Host {
 
   constructor(
     private readonly model: Model,
-    private readonly secrets?: SecretStore,
-    private readonly conversationStore?: ConversationStore,
+    private readonly secrets: SecretStore | undefined,
+    private readonly conversationStore: ConversationStore | undefined,
+    private readonly mcp: McpServer,
   ) {
     this.credential = this.secrets?.read() ?? "";
     const saved = this.conversationStore?.read();
@@ -109,34 +152,99 @@ export class Host {
       this.persist();
       return;
     }
-    const result = await this.model.complete({
-      apiRoot: this.apiRoot,
-      modelName: this.modelName,
-      credential: this.credential,
-      messages: open.entries.flatMap((entry) =>
-        entry.role === "failure" ? [] : [{ role: entry.role, text: entry.text }],
-      ),
-    });
-    if (result.kind === "rejected") {
-      open.entries.push({ role: "failure", text: "The model rejected the credential." });
-      this.persist();
-      return;
+    const catalog = await this.loadCatalog();
+    for (const line of catalog.lines) {
+      open.entries.push({ role: "failure", text: line });
     }
-    if (result.kind === "unreachable") {
-      open.entries.push({ role: "failure", text: "The model could not be reached." });
-      this.persist();
-      return;
-    }
-    if (result.kind === "tool_call") {
-      open.entries.push({
-        role: "failure",
-        text: "The model asked for a tool, and this Host cannot run tools.",
-      });
-      this.persist();
-      return;
-    }
-    open.entries.push({ role: "assistant", text: result.text });
     this.persist();
+    const instructions =
+      catalog.tools.length === 0
+        ? "Tools come from MCP servers. No MCP tools are available. Do not invent tool results."
+        : "Tools listed here come from MCP servers. Use only those tools. Do not invent tool results.";
+    const available = new Set(catalog.tools.map((tool) => tool.name));
+    let executed = 0;
+    for (;;) {
+      const result = await this.model.complete({
+        apiRoot: this.apiRoot,
+        modelName: this.modelName,
+        credential: this.credential,
+        instructions,
+        tools: catalog.tools,
+        messages: open.entries.flatMap((entry) => (entry.role === "failure" ? [] : [{ ...entry }])),
+      });
+      if (result.kind === "rejected") {
+        open.entries.push({ role: "failure", text: "The model rejected the credential." });
+        this.persist();
+        return;
+      }
+      if (result.kind === "unreachable") {
+        open.entries.push({ role: "failure", text: "The model could not be reached." });
+        this.persist();
+        return;
+      }
+      if (result.kind === "assistant") {
+        open.entries.push({ role: "assistant", text: result.text });
+        this.persist();
+        return;
+      }
+      if (executed >= toolRoundLimit) {
+        open.entries.push({
+          role: "failure",
+          text: "The model asked for tools too many times on this message, so the Host stopped.",
+        });
+        this.persist();
+        return;
+      }
+      executed += 1;
+      if (result.text !== "") {
+        open.entries.push({ role: "assistant", text: result.text });
+      }
+      for (const request of result.calls) {
+        if (!available.has(request.name)) {
+          open.entries.push({
+            role: "tool",
+            callId: request.id,
+            name: request.name,
+            arguments: request.arguments,
+            status: "failed",
+            text: "That tool is not available.",
+          });
+          continue;
+        }
+        if (request.arguments === null) {
+          open.entries.push({
+            role: "tool",
+            callId: request.id,
+            name: request.name,
+            arguments: null,
+            status: "failed",
+            text: "The tool arguments could not be read.",
+          });
+          continue;
+        }
+        if (request.arguments.dry_run === false) {
+          open.entries.push({
+            role: "tool",
+            callId: request.id,
+            name: request.name,
+            arguments: request.arguments,
+            status: "held",
+            text: "Not run. This call waits for Apply.",
+          });
+          continue;
+        }
+        const outcome = await this.mcp.call(request.name, request.arguments);
+        open.entries.push({
+          role: "tool",
+          callId: request.id,
+          name: request.name,
+          arguments: request.arguments,
+          status: outcome.status,
+          text: outcome.text,
+        });
+      }
+      this.persist();
+    }
   }
 
   start(): void {
@@ -171,6 +279,14 @@ export class Host {
       })),
       transcript: this.transcript(),
     };
+  }
+
+  private async loadCatalog(): Promise<ToolCatalog> {
+    try {
+      return await this.mcp.tools();
+    } catch {
+      return { tools: [], lines: ["Polarion tools are unavailable."] };
+    }
   }
 
   private ensureOpen(): ConversationRecord {

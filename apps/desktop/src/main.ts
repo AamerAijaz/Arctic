@@ -3,6 +3,7 @@ import path from "node:path";
 import { FileConversationStore } from "./conversation-store";
 import { Host } from "./host";
 import { HostConfigFile, type HostConfig } from "./host-config";
+import { McpServers } from "./mcp-servers";
 import { OpenAiModel } from "./openai-model";
 
 function text(value: unknown): string {
@@ -31,10 +32,14 @@ function createWindow(): void {
   void window.loadFile(path.join(__dirname, "index.html"));
 }
 
+let mcp: McpServers | undefined;
+
 void app.whenReady().then(() => {
   const directory = app.getPath("userData");
   const config = new HostConfigFile(directory);
-  const host = new Host(new OpenAiModel(), undefined, new FileConversationStore(directory));
+  const servers = new McpServers(directory);
+  mcp = servers;
+  const host = new Host(new OpenAiModel(), undefined, new FileConversationStore(directory), servers);
   const saved = config.read();
   if (saved.apiRoot.trim() !== "") {
     host.setApiRoot(saved.apiRoot);
@@ -76,9 +81,21 @@ void app.whenReady().then(() => {
     return host.view();
   });
 
+  ipcMain.handle("host:mcp-list", () => servers.list());
+
+  ipcMain.handle("host:mcp-add", (_event, value: unknown) => {
+    const record = typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+    return servers.add(text(record.name), text(record.url));
+  });
+
+  ipcMain.handle("host:mcp-remove", (_event, name: unknown) => {
+    return servers.remove(text(name));
+  });
+
   createWindow();
 });
 
 app.on("window-all-closed", () => {
+  mcp?.close();
   app.quit();
 });
