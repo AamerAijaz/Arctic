@@ -226,6 +226,51 @@
         color: var(--danger-text);
         font-size: 12px;
       }
+
+      .mcp-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      #mcp-add,
+      #mcp-check,
+      .mcp-remove {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #2a2e38;
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+
+      #mcp-servers {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .mcp-row {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .mcp-row strong { color: var(--text); }
+
+      .mcp-remove { align-self: flex-start; }
+
+      #mcp-error {
+        margin: 0;
+        color: var(--danger-text);
+        font-size: 12px;
+      }
+
+      .tool {
+        align-self: flex-start;
+        background: var(--card);
+        border: 1px solid var(--line);
+      }
     </style>
   </head>
   <body>
@@ -261,6 +306,21 @@
         </span>
       </label>
       <p class="hint">The credential is not written into the conversation.</p>
+      <p class="section-label">MCP servers</p>
+      <label>
+        Name
+        <input id="mcp-name" placeholder="arctic" />
+      </label>
+      <label>
+        URL
+        <input id="mcp-url" placeholder="http://127.0.0.1:8080/mcp" />
+      </label>
+      <div class="mcp-actions">
+        <button id="mcp-add" type="button">Add</button>
+        <button id="mcp-check" type="button">Check</button>
+      </div>
+      <div id="mcp-servers"></div>
+      <p id="mcp-error"></p>
       </div>
     </aside>
     <main>
@@ -284,6 +344,10 @@
       const send = document.querySelector("#send");
       const composer = document.querySelector("#composer");
       const status = document.querySelector("#status");
+      const mcpName = document.querySelector("#mcp-name");
+      const mcpUrl = document.querySelector("#mcp-url");
+      const mcpServers = document.querySelector("#mcp-servers");
+      const mcpError = document.querySelector("#mcp-error");
 
       function showStatus(text) {
         status.hidden = text === "";
@@ -324,8 +388,12 @@
         for (const entry of view.transcript) {
           const line = document.createElement("p");
           line.className = "bubble " + entry.role;
-          const speaker = entry.role === "person" ? "You" : entry.role === "assistant" ? "Model" : "Failed";
-          line.textContent = speaker + ": " + entry.text;
+          if (entry.role === "tool") {
+            line.textContent = entry.name + " " + entry.status + " " + entry.text;
+          } else {
+            const speaker = entry.role === "person" ? "You" : entry.role === "assistant" ? "Model" : "Failed";
+            line.textContent = speaker + ": " + entry.text;
+          }
           transcript.append(line);
         }
         transcript.scrollTop = transcript.scrollHeight;
@@ -405,6 +473,59 @@
         void takeView(() => window.host.start());
       });
 
+      function showMcp(view) {
+        mcpError.textContent = view.error == null ? "" : view.error;
+        mcpServers.replaceChildren();
+        for (const server of view.servers) {
+          const row = document.createElement("div");
+          row.className = "mcp-row";
+          const name = document.createElement("strong");
+          name.textContent = server.name;
+          const url = document.createElement("span");
+          url.textContent = server.url;
+          const label = document.createElement("span");
+          label.textContent = server.label;
+          row.append(name, url, label);
+          if (server.detail) {
+            const detail = document.createElement("span");
+            detail.textContent = server.detail;
+            row.append(detail);
+          }
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.className = "mcp-remove";
+          remove.textContent = "Remove";
+          remove.addEventListener("click", () => {
+            if (!window.host) {
+              return;
+            }
+            void window.host.removeMcpServer(server.name).then(showMcp);
+          });
+          row.append(remove);
+          mcpServers.append(row);
+        }
+      }
+
+      document.querySelector("#mcp-add").addEventListener("click", () => {
+        if (!window.host) {
+          return;
+        }
+        void window.host.addMcpServer(mcpName.value, mcpUrl.value).then((view) => {
+          showMcp(view);
+          if (view.error === null) {
+            mcpName.value = "";
+            mcpUrl.value = "";
+          }
+        });
+      });
+
+      document.querySelector("#mcp-check").addEventListener("click", () => {
+        if (!window.host) {
+          return;
+        }
+        void window.host.listMcpServers().then(showMcp);
+      });
+
       if (window.host) {
         void takeView(() => window.host.load());
         void window.host.loadConfig().then((saved) => {
@@ -418,6 +539,7 @@
             credential.value = saved.apiKey;
           }
         });
+        void window.host.listMcpServers().then(showMcp);
       } else {
         showView({ conversations: [], transcript: [] });
       }

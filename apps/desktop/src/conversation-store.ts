@@ -1,10 +1,21 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export type StoredEntry = {
-  role: "person" | "assistant" | "failure";
-  text: string;
-};
+type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+type JsonObject = { [key: string]: Json };
+
+export type StoredEntry =
+  | { role: "person"; text: string }
+  | { role: "assistant"; text: string }
+  | { role: "failure"; text: string }
+  | {
+      role: "tool";
+      callId: string;
+      name: string;
+      arguments: JsonObject | null;
+      status: "ran" | "failed" | "held";
+      text: string;
+    };
 
 export type ConversationRecord = {
   id: string;
@@ -85,6 +96,27 @@ function normalizeEntry(value: unknown): StoredEntry[] {
     return [];
   }
   const record = value as Record<string, unknown>;
+  if (record.role === "tool") {
+    if (typeof record.callId !== "string" || typeof record.name !== "string" || typeof record.text !== "string") {
+      return [];
+    }
+    if (record.status !== "ran" && record.status !== "failed" && record.status !== "held") {
+      return [];
+    }
+    if (record.arguments !== null && !isPlainObject(record.arguments)) {
+      return [];
+    }
+    return [
+      {
+        role: "tool",
+        callId: record.callId,
+        name: record.name,
+        arguments: record.arguments,
+        status: record.status,
+        text: record.text,
+      },
+    ];
+  }
   if (typeof record.text !== "string") {
     return [];
   }
@@ -92,4 +124,8 @@ function normalizeEntry(value: unknown): StoredEntry[] {
     return [{ role: record.role, text: record.text }];
   }
   return [];
+}
+
+function isPlainObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

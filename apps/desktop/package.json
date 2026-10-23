@@ -4,9 +4,12 @@
   "private": true,
   "main": "dist/main.js",
   "scripts": {
-    "test": "node --import tsx --test src/host.test.ts src/host-config.test.ts",
+    "test": "node --import tsx --test src/host.test.ts src/host-config.test.ts src/mcp-servers.test.ts src/openai-model.test.ts",
     "build": "tsc && node -e \"require('fs').copyFileSync('src/index.html','dist/index.html')\"",
     "start": "npm run build && electron ."
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.28.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
